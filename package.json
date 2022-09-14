@@ -1,0 +1,121 @@
+{
+  "name": "phpunit-test-workbench",
+  "displayName": "PHPUnit Test Workbench",
+  "description": "",
+  "version": "0.0.1",
+  "engines": {
+    "vscode": "^1.71.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "workspaceContains:*.php"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "phpunit-test-workbench.helloWorld",
+        "title": "Hello World"
+      }
+    ],
+    "configuration": {
+      "type": "object",
+      "title": "PHPUnit Test Workbench",
+      "properties": {
+        "log.level": {
+          "scope": "resource",
+          "type": "string",
+          "enum": [
+            "none",
+            "messages",
+            "trace"
+          ],
+          "enumItemLabels": [
+            "No log messages",
+            "Standard messages only",
+            "Verbose messaging"
+          ],
+          "default": "messages",
+          "markdownDescription": "Set the level of detail for log messages."
+        },
+        "log.channel": {
+          "scope": "resource",
+          "type": "string",
+          "enum": [
+            "panel",
+            "file"
+          ],
+          "enumItemLabels": [
+            "VS Code output panel",
+            "Log file"
+          ],
+          "default": "panel",
+          "markdownDescription": "Destination for logged messages."
+        },
+        "log.file": {
+          "scope": "resource",
+          "type": "string",
+          "markdownDescription": "Location to file to write logged messages to. Only applicable when the log channel is `file`."
+        },
+        "php.binaryPath": {
+          "scope": "resource",
+          "type": "string",
+          "markdownDescription": "Path to location of the PHP binary. If left blank, will attempt to use globally available binary."
+        },
+        "phpunit.binaryPath": {
+          "scope": "resource",
+          "type": "string",
+          "markdownDescription": "Path to location of the PHPUnit binary (either `phpunit` or `phpunit.phar`). If left blank, will attempt to find the binary in common locations:\n  - Composer vendor directory\n  - `phpunit.phar` in the current workspace\n  - Globally available `phpunit` (or `phpunit.bat`)"
+        },
+        "phpunit.testOrganization": {
+          "scope": "resource",
+          "type": "string",
+          "enum": [
+            "file",
+            "namespace",
+            "testsuite"
+          ],
+          "enumItemLabels": [
+            "By file",
+            "By namespace",
+            "By test suite (defined in `phpunit.xml` file)"
+          ],
+          "default": "file",
+          "markdownDescription": "Describes the way tests are organised in the Testing panel."
+        },
+        "phpunit.testsPath": {
+          "scope": "resource",
+          "type": "string",
+          "markdownDescription": "The glob(s) describing the location of your test files. Default pattern is `{test,tests,Test,Tests}/**/*Test.php`.",
+          "default": "{test,tests,Test,Tests}/**/*Test.php"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "pretest": "npm run compile && npm run lint",
+    "lint": "eslint src --ext ts",
+    "test": "node ./out/test/runTest.js"
+  },
+  "devDependencies": {
+    "@types/glob": "^7.2.0",
+    "@types/mocha": "^9.1.1",
+    "@types/node": "16.x",
+    "@types/vscode": "^1.71.0",
+    "@typescript-eslint/eslint-plugin": "^5.31.0",
+    "@typescript-eslint/parser": "^5.31.0",
+    "@vscode/test-electron": "^2.1.5",
+    "eslint": "^8.20.0",
+    "glob": "^8.0.3",
+    "mocha": "^10.0.0",
+    "typescript": "^4.7.4"
+  },
+  "dependencies": {
+    "php-parser": "^3.1.0"
+  }
+}
