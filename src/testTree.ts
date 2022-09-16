@@ -1,13 +1,16 @@
 /// <reference path="../types/php-parser.d.ts" />
 import Engine from 'php-parser';
-import { TextDecoder } from 'util';
 import * as vscode from 'vscode';
 
-const textDecoder = new TextDecoder('utf-8');
-let generationCounter = 0;
+export enum ItemType {
+    file,
+    testCase
+}
+export const testDataMap = new WeakMap<vscode.TestItem, ItemType>();
 
-export type PhpUnitTestData = TestFile | TestHeading | TestCase;
-export const testData = new WeakMap<vscode.TestItem, PhpUnitTestData>();
+export function getTestItemType(item: vscode.TestItem) {
+    return testDataMap.get(item);
+}
 
 const engine = Engine.create({
     ast: {
@@ -29,30 +32,12 @@ const engine = Engine.create({
     }
 });
 
-export const getContentFromFilesystem = async (uri: vscode.Uri) => {
-    try {
-        const rawContent = await vscode.workspace.fs.readFile(uri);
-        return textDecoder.decode(rawContent);
-    } catch (e) {
-        console.warn(`Error providing tests for ${uri.fsPath}`, e);
-        return '';
-    }
-};
-
 export class TestFile {
     public didResolve = false;
 
-    public async updateFromDisk(controller: vscode.TestController, item: vscode.TestItem) {
-        try {
-            const content = await getContentFromFilesystem(item.uri!);
-            item.error = undefined;
-            this.updateFromContents(controller, content, item);
-        } catch (e) {
-            item.error = (e as Error).stack;
-        }
-    }
+    public updateFromContents(controller: vscode.TestController, content: string, item: vscode.TestItem) {
+        this.didResolve = true;
 
-    public updateFromContents(controller:vscode.TestController, content: string, item: vscode.TestItem) {
         // Get initial set of nodes from file content
         const tree: any = engine.parseCode(content);
         
@@ -86,6 +71,9 @@ export class TestFile {
 
                 // Add as a child of the parent class
                 classTestItem.children.add(methodTestItem);
+
+                // Add item type to the test data map
+                testDataMap.set(methodTestItem, ItemType.testCase);
             });
 
             // Add class to parent TestItem for file
@@ -109,30 +97,11 @@ export class TestFile {
 
     private findTestMethods(nodes: any[]): any[] {
         return nodes.reduce((methods: any[], node: any) => {
-            if (node.kind === 'method' && node.visibility == 'public' && node.name.name.startsWith('test')) {
+            if (node.kind === 'method' && node.visibility === 'public' && node.name.name.startsWith('test')) {
                 return methods.concat(node);
             }
 
             return methods;
         }, []);
-    }
-}
-
-export class TestHeading {
-    constructor(public generation: number) { }
-}
-
-export class TestCase {
-    constructor(
-        private readonly namespace: string,
-        private readonly methodName: string
-    ) { }
-
-    getNamespace() {
-        return this.namespace;
-    }
-
-    getLabel() {
-        return this.methodName;
     }
 }

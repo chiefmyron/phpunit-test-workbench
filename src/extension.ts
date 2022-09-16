@@ -1,63 +1,61 @@
 // The module 'vscode' contains the VS Code extensibility API
 // Import the module and reference it with the alias vscode in your code below
+import { TextDecoder } from 'util';
 import * as vscode from 'vscode';
-import { getContentFromFilesystem, PhpUnitTestData, TestCase, testData, TestFile } from './testTree';
+import { testDataMap, getTestItemType, TestFile, ItemType } from './testTree';
+import { parseTestFileContents } from './parser';
 
 // this method is called when your extension is activated
 // your extension is activated the very first time the command is executed
 export function activate(context: vscode.ExtensionContext) {
+	console.info('Beginning activation of "phpunit-test-workbench" extension...\n');
+
 	// Create test controller
 	const ctrl = vscode.tests.createTestController('phpunitTestController', 'PHPUnit Test Workbench');
 	context.subscriptions.push(ctrl);
 
-	// Run handler
-	const runHandler = (request: vscode.TestRunRequest, cancellation: vscode.CancellationToken) => {
-
-	};
-	ctrl.createRunProfile('Run Tests', vscode.TestRunProfileKind.Run, runHandler, true);
-
 	// Refresh handler
 	ctrl.refreshHandler = async () => {
-		await Promise.all(getWorkspaceTestPatterns().map(({ pattern }) => findInitialFiles(ctrl, pattern)));
+		await discoverTestFilesInWorkspace(ctrl);
 	};
 
 	// Resolve handler
 	ctrl.resolveHandler = async item => {
 		if (!item) {
-			context.subscriptions.push(...startWatchingWorkspace(ctrl));
-			return;
-		}
-
-		const data = testData.get(item);
-		if (data instanceof TestFile) {
-			await data.updateFromDisk(ctrl, item);
+			// We are being asked to discover all tests for the workspace
+			await discoverTestFilesInWorkspace(ctrl);
+		} else {
+			// We are being asked to resolve children for the supplied TestItem
+			await parseTestFileContents('namespace', item.uri!, ctrl);
+			//await parseTestsInFileContents(ctrl, item);
 		}
 	};
 
-	function updateNodeForDocument(e: vscode.TextDocument) {
-		if (e.uri.scheme !== 'file') {
-			return;
-		}
-		if (!e.uri.path.endsWith('.php')) {
-			return;
-		}
-
-		const { file, data } = getOrCreateFile(ctrl, e.uri);
-		data.updateFromContents(ctrl, e.getText(), file);
-	}
-
-	for (const document of vscode.workspace.textDocuments) {
-		updateNodeForDocument(document);
-	}
+	// Set up run profile
+	ctrl.createRunProfile(
+		'Run tests',
+		vscode.TestRunProfileKind.Run,
+		(request, token) => { runHandler(request, token, ctrl); },
+		true
+	);
 
 	context.subscriptions.push(
-		vscode.workspace.onDidOpenTextDocument(updateNodeForDocument),
-		vscode.workspace.onDidChangeTextDocument(e => updateNodeForDocument(e.document))
+		vscode.workspace.onDidChangeConfiguration(e => discoverTestFilesInWorkspace(ctrl)),
+		vscode.workspace.onDidOpenTextDocument(doc => parseTestFileContents('namespace', doc.uri, ctrl, doc.getText())),
+		vscode.workspace.onDidChangeTextDocument(e => parseTestFileContents('namespace', e.document.uri, ctrl, e.document.getText()))
 	);
+
+	// Run initial test discovery on files already present in the workspace
+	console.group('Running initial test discovery for files already present in workspace:');
+	for (const doc of vscode.workspace.textDocuments) {
+		parseTestFileContents('namespace', doc.uri, ctrl, doc.getText());
+	}
+	console.groupEnd();
+	console.info('Intial test discovery complete.\n');
 
 	// Use the console to output diagnostic information (console.log) and errors (console.error)
 	// This line of code will only be executed once when your extension is activated
-	console.log('Congratulations, your extension "phpunit-test-workbench" is now active!');
+	console.info('Congratulations, your extension "phpunit-test-workbench" is now active!');
 
 	// The command has been defined in the package.json file
 	// Now provide the implementation of the command with registerCommand
@@ -74,53 +72,133 @@ export function activate(context: vscode.ExtensionContext) {
 // this method is called when your extension is deactivated
 export function deactivate() {}
 
-function getWorkspaceTestPatterns() {
+function parseTestsInDocument(controller: vscode.TestController, doc: vscode.TextDocument) {
+	if (doc.uri.scheme === 'file' && doc.uri.path.endsWith('.php')) {
+		const item = findOrCreateTestItemForFile(controller, doc.uri);
+		parseTestsInFileContents(controller, item, doc.getText());
+	}
+}
+
+async function parseTestsInFileContents(controller: vscode.TestController, item: vscode.TestItem, contents?: string) {
+	// If the file contents have not been provided, load them from disk
+	let uri = item.uri!;
+	console.info(`Parsing '${uri.fsPath}' for tests...`);
+	if (!contents) {
+		try {
+			const rawContent = await vscode.workspace.fs.readFile(uri);
+			return new TextDecoder().decode(rawContent);
+		} catch (e) {
+			console.warn(`Unable to load test file contents for: ${uri.fsPath}`, e);
+			return;
+		}
+	}
+
+	// Create new TestFile instance for file
+	let file = new TestFile();
+	file.updateFromContents(controller, contents, item);
+	item.canResolveChildren = true;
+	
+	// Add item type to the test data map
+	testDataMap.set(item, ItemType.file);
+}
+
+async function discoverTestFilesInWorkspace(controller: vscode.TestController) {
+	// Handle the case of no open folders
 	if (!vscode.workspace.workspaceFolders) {
 		return [];
 	}
 
-	return vscode.workspace.workspaceFolders.map(workspaceFolder => ({
-		workspaceFolder,
-		pattern: new vscode.RelativePattern(workspaceFolder, '**/*.php')
-	}));
+	// Get the pattern defining the test file location from configuration
+	const phpUnitConfig = vscode.workspace.getConfiguration('phpunit-test-workbench.phpunit');
+
+	return Promise.all(
+		vscode.workspace.workspaceFolders.map(async workspaceFolder => {
+			const pattern = new vscode.RelativePattern(workspaceFolder, phpUnitConfig.get('testsPath', '**/*.php'));
+			const watcher = vscode.workspace.createFileSystemWatcher(pattern);
+
+			// Set file related event handlers
+			// watcher.onDidCreate(uri => findOrCreateTestItemForFile(controller, uri));
+			// watcher.onDidChange(uri => parseTestsInFileContents(controller, findOrCreateTestItemForFile(controller, uri)));
+			// watcher.onDidDelete(uri => controller.items.delete(uri.toString()));
+
+			watcher.onDidCreate(uri => parseTestFileContents('namespace', uri, controller));
+			watcher.onDidChange(uri => parseTestFileContents('namespace', uri, controller));
+			watcher.onDidDelete(uri => controller.items.delete(uri.toString()));
+
+			// Find initial set of files for workspace
+			for (const file of await vscode.workspace.findFiles(pattern)) {
+				parseTestFileContents('namespace', file, controller);
+			}
+
+			return watcher;
+		})
+	);
 }
 
-async function findInitialFiles(controller: vscode.TestController, pattern: vscode.GlobPattern) {
-	for (const file of await vscode.workspace.findFiles(pattern)) {
-		getOrCreateFile(controller, file);
-	}
-}
-
-function getOrCreateFile(controller: vscode.TestController, uri: vscode.Uri) {
+function findOrCreateTestItemForFile(controller: vscode.TestController, uri: vscode.Uri) {
+	// Check if a TestItem has already been created for the supplied URI
 	const existing = controller.items.get(uri.toString());
 	if (existing) {
-		return { file: existing, data: testData.get(existing) as TestFile };
+		return existing;
 	}
 
-	const file = controller.createTestItem(uri.toString(), uri.path.split('/').pop()!, uri);
-	controller.items.add(file);
-
-	const data = new TestFile();
-	testData.set(file, data);
-
-	file.canResolveChildren = true;
-	return { file, data };
+	// Create new TestItem for this file
+	const itemId = uri.toString();
+	const label = uri.path.split('/').pop()!;
+	const item = controller.createTestItem(itemId, label, uri);
+	item.canResolveChildren = true;
+	controller.items.add(item);
+	return item;
 }
 
-function startWatchingWorkspace(controller: vscode.TestController) {
-	return getWorkspaceTestPatterns().map(({ workspaceFolder, pattern }) => {
-		const watcher = vscode.workspace.createFileSystemWatcher(pattern);
+async function runHandler(
+	request: vscode.TestRunRequest,
+	token: vscode.CancellationToken,
+	controller: vscode.TestController
+) {
+	const run = controller.createTestRun(request);
+	const queue: vscode.TestItem[] = [];
 
-		watcher.onDidCreate(uri => getOrCreateFile(controller, uri));
-		watcher.onDidDelete(uri => controller.items.delete(uri.toString()));
-		watcher.onDidChange(uri => {
-			const { file, data } = getOrCreateFile(controller, uri);
-			if (data.didResolve) {
-				data.updateFromDisk(controller, file);
-			}
-		});
+	// Loop through all included tests (or all known tests if no includes specified) and add to queue
+	if (request.include) {
+		request.include.forEach(test => queue.push(test));
+	} else {
+		controller.items.forEach(test => queue.push(test));
+	}
 
-		findInitialFiles(controller, pattern);
-		return watcher;
-	});
+	// For every queued test, attempt to run it
+	while (queue.length > 0 && !token.isCancellationRequested) {
+		const test = queue.pop()!;
+
+		// Check if the user asked to exclude this test
+		if (request.exclude?.includes(test)) {
+			continue;
+		}
+
+		// Check type of TestItem we are running
+		switch(getTestItemType(test)) {
+			case ItemType.file:
+				// We are running a file - need to check if it has been parsed for test cases
+				if (test.children.size <= 0) {
+					await parseTestsInFileContents(controller, test);
+				}
+				break;
+			case ItemType.testCase:
+				// We are running a test case
+				const start = Date.now();
+				try {
+					// TODO: Actual test execution
+					run.passed(test, Date.now() - start);
+				} catch (e) {
+					run.failed(test, new vscode.TestMessage('Test failed!'), Date.now() - start);
+				}
+				break;
+		}
+
+		// If the test has any children, add them to the queue now
+		test.children.forEach(test => queue.push(test));
+	}
+
+	// Mark the test run as complete
+	run.end();
 }

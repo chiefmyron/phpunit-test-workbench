@@ -24,7 +24,7 @@
       "type": "object",
       "title": "PHPUnit Test Workbench",
       "properties": {
-        "log.level": {
+        "phpunit-test-workbench.log.level": {
           "scope": "resource",
           "type": "string",
           "enum": [
@@ -40,7 +40,7 @@
           "default": "messages",
           "markdownDescription": "Set the level of detail for log messages."
         },
-        "log.channel": {
+        "phpunit-test-workbench.log.channel": {
           "scope": "resource",
           "type": "string",
           "enum": [
@@ -54,22 +54,22 @@
           "default": "panel",
           "markdownDescription": "Destination for logged messages."
         },
-        "log.file": {
+        "phpunit-test-workbench.log.file": {
           "scope": "resource",
           "type": "string",
           "markdownDescription": "Location to file to write logged messages to. Only applicable when the log channel is `file`."
         },
-        "php.binaryPath": {
+        "phpunit-test-workbench.php.binaryPath": {
           "scope": "resource",
           "type": "string",
           "markdownDescription": "Path to location of the PHP binary. If left blank, will attempt to use globally available binary."
         },
-        "phpunit.binaryPath": {
+        "phpunit-test-workbench.phpunit.binaryPath": {
           "scope": "resource",
           "type": "string",
           "markdownDescription": "Path to location of the PHPUnit binary (either `phpunit` or `phpunit.phar`). If left blank, will attempt to find the binary in common locations:\n  - Composer vendor directory\n  - `phpunit.phar` in the current workspace\n  - Globally available `phpunit` (or `phpunit.bat`)"
         },
-        "phpunit.testOrganization": {
+        "phpunit-test-workbench.phpunit.testOrganization": {
           "scope": "resource",
           "type": "string",
           "enum": [
@@ -85,7 +85,7 @@
           "default": "file",
           "markdownDescription": "Describes the way tests are organised in the Testing panel."
         },
-        "phpunit.testsPath": {
+        "phpunit-test-workbench.phpunit.testsPath": {
           "scope": "resource",
           "type": "string",
           "markdownDescription": "The glob(s) describing the location of your test files. Default pattern is `{test,tests,Test,Tests}/**/*Test.php`.",
