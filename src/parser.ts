@@ -61,78 +61,18 @@ export async function parseTestFileContents(mode: string, uri: vscode.Uri, ctrl:
     // Get test methods for class
     const methodNodes = findTestMethodNodes(classNode.body);
 
-    // Find parent node (and create any missing ancestors along the way)
-    let parentTestItem = ctrl.items.get(uri.toString());
-    if (!parentTestItem) {
+    // Check if the TestItem for the test file has already been created
+    let classTestItem = ctrl.items.get(uri.toString());
+    if (!classTestItem) {
         if (mode === 'namespace') {
-            // Get base path for test file
-            const namespaceParts = namespaceNode.name.split('\\');
-            const filePathParts = uri.path.split('/');
-
-            let basePathParts: string[] = [];
-            for (const part of filePathParts) {
-                if (part === namespaceParts[0]) {
-                    break;
-                }
-                basePathParts.push(part);
-            }
-            const basePath = basePathParts.join('/');
-
-            // Build tree structure based on namespace hierarchy
-            let namespacePath = basePath;
-            namespaceParts.forEach((part: string) => {
-                // Determine URI path for namespace component
-                namespacePath = namespacePath + '/' + part;
-                const namespaceUri = vscode.Uri.parse(namespacePath);
-
-                // Check if a TestItem has already been created for the namespace component URI
-                let item = ctrl.items.get(namespaceUri.toString());
-                if (!item) {
-                    // Create new TestItem for namespace component
-                    const itemId = namespaceUri.toString();
-                    const label = part;
-                    item = ctrl.createTestItem(itemId, label, namespaceUri);
-                    item.canResolveChildren = true;
-                    ctrl.items.add(item);
-                }
-
-                // Add new namespace TestItem as a child in the hierarchy
-                if (parentTestItem) {
-                    parentTestItem.children.add(item);
-                }
-                parentTestItem = item;
-            });
-
-            // Create new TestItem for class file
-            const itemId = uri.toString();
-            const label = classNode.name.name;
-            const classTestItem = ctrl.createTestItem(itemId, label, uri);
-            classTestItem.range = new vscode.Range(
-                new vscode.Position(classNode.loc.start.line, classNode.loc.start.column),
-                new vscode.Position(classNode.loc.end.line, classNode.loc.end.column)
-            );
-            classTestItem.canResolveChildren = true;
-            ctrl.items.add(classTestItem);
-
-            parentTestItem!.children.add(classTestItem);
-            parentTestItem = classTestItem;
+            // Verify or create hierarchy of namespace TestItems as parent nodes before creating the class test item
+            let namespaceTestItem = createNamespaceTestItems(namespaceNode, ctrl, uri);
+            classTestItem = createClassTestItem(classNode, ctrl, uri, namespaceTestItem);
         } else if (mode === 'testsuite') {
-            // Parent will be the test suite name defined in phpunit.xml as the parent for this file
+
         } else {
-            // Parent will be the classname (mapped to the test file)
-            let classTestItem = ctrl.items.get(uri.toString());
-            if (!classTestItem) {
-                // Create new TestItem for namespace component
-                const itemId = uri.toString();
-                const label = classNode.name.name;
-                classTestItem = ctrl.createTestItem(itemId, label, uri);
-                classTestItem.range = new vscode.Range(
-                    new vscode.Position(classNode.loc.start.line, classNode.loc.start.column),
-                    new vscode.Position(classNode.loc.end.line, classNode.loc.end.column)
-                );
-                ctrl.items.add(classTestItem);
-            }
-            parentTestItem = classTestItem;
+            // Create class test item as a root node
+            classTestItem = createClassTestItem(classNode, ctrl, uri);
         }
     }
 
@@ -140,7 +80,7 @@ export async function parseTestFileContents(mode: string, uri: vscode.Uri, ctrl:
     methodNodes.map((methodNode: any) => {
         // Create TestItem for method
         const methodName = methodNode.name.name;
-        const methodId = `${parentTestItem!.id}::${methodName}`;
+        const methodId = `${classTestItem!.id}::${methodName}`;
         const methodTestItem = ctrl.createTestItem(methodId, methodName, uri);
         methodTestItem.range = new vscode.Range(
             new vscode.Position(methodNode.loc.start.line, methodNode.loc.start.column),
@@ -148,11 +88,9 @@ export async function parseTestFileContents(mode: string, uri: vscode.Uri, ctrl:
         );
         ctrl.items.add(methodTestItem);
 
-        // Add as a child of the parent class
-        parentTestItem!.children.add(methodTestItem);
+        // Add as a child of the class TestItem
+        classTestItem!.children.add(methodTestItem);
     });
-
-    
 }
 
 function findNamespaceNode(nodes: any[]): any {
@@ -181,4 +119,71 @@ function findTestMethodNodes(nodes: any[]): any[] {
 
         return methods;
     }, []);
+}
+
+function createNamespaceTestItems(namespaceNode: any, ctrl: vscode.TestController, uri: vscode.Uri): vscode.TestItem {
+    // Determine the base path for the test file
+    const namespace = namespaceNode.name;
+    const namespaceParts = namespaceNode.name.split('\\');
+    const filePathParts = uri.path.split('/');
+
+    let basePathParts: string[] = [];
+    for (const part of filePathParts) {
+        if (part === namespaceParts[0]) {
+            break;
+        }
+        basePathParts.push(part);
+    }
+    const basePath = basePathParts.join('/');
+    
+    // If the TestItem for the namespace has already been created, no further work required
+    let namespaceTestItem = ctrl.items.get(basePath + '/' + namespace);
+    if (namespaceTestItem) {
+        return namespaceTestItem;
+    }
+
+    // Build tree structure based on namespace hierarchy
+    let namespacePath = basePath;
+    namespaceParts.forEach((part: string) => {
+        // Determine URI path for namespace component
+        namespacePath = namespacePath + '/' + part;
+        const namespaceUri = vscode.Uri.parse(namespacePath);
+
+        // Check if a TestItem has already been created for the namespace component URI
+        let item = ctrl.items.get(namespaceUri.toString());
+        if (!item) {
+            // Create new TestItem for namespace component
+            const itemId = namespaceUri.toString();
+            const label = part;
+            item = ctrl.createTestItem(itemId, label, namespaceUri);
+            item.canResolveChildren = true;
+            ctrl.items.add(item);
+        }
+
+        // Add new namespace TestItem as a child in the hierarchy
+        if (namespaceTestItem) {
+            namespaceTestItem.children.add(item);
+        }
+        namespaceTestItem = item;
+    });
+
+    return namespaceTestItem!;
+}
+
+function createClassTestItem(classNode: any, ctrl: vscode.TestController, uri: vscode.Uri, parentTestItem?: vscode.TestItem): vscode.TestItem {
+    const itemId = uri.toString();
+    const label = classNode.name.name;
+    const classTestItem = ctrl.createTestItem(itemId, label, uri);
+    classTestItem.range = new vscode.Range(
+        new vscode.Position(classNode.loc.start.line, classNode.loc.start.column),
+        new vscode.Position(classNode.loc.end.line, classNode.loc.end.column)
+    );
+    classTestItem.canResolveChildren = true;
+    ctrl.items.add(classTestItem);
+
+    if (parentTestItem) {
+        parentTestItem.children.add(classTestItem);
+    }
+    
+    return classTestItem;
 }
