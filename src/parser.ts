@@ -34,7 +34,7 @@ export async function parseTestFileContents(mode: string, uri: vscode.Uri, ctrl:
         console.info(`Loading contents of '${uri.fsPath}' from disk...`);
 		try {
 			const rawContent = await vscode.workspace.fs.readFile(uri);
-			return new TextDecoder().decode(rawContent);
+			fileContents = new TextDecoder().decode(rawContent);
 		} catch (e) {
 			console.warn('Unable to load test file contents!', e);
 			return;
@@ -62,18 +62,16 @@ export async function parseTestFileContents(mode: string, uri: vscode.Uri, ctrl:
     const methodNodes = findTestMethodNodes(classNode.body);
 
     // Check if the TestItem for the test file has already been created
-    let classTestItem = ctrl.items.get(uri.toString());
-    if (!classTestItem) {
-        if (mode === 'namespace') {
-            // Verify or create hierarchy of namespace TestItems as parent nodes before creating the class test item
-            let namespaceTestItem = createNamespaceTestItems(namespaceNode, ctrl, uri);
-            classTestItem = createClassTestItem(classNode, ctrl, uri, namespaceTestItem);
-        } else if (mode === 'testsuite') {
+    let classTestItem: any;
+    if (mode === 'namespace') {
+        // Verify or create hierarchy of namespace TestItems as parent nodes before creating the class test item
+        let namespaceTestItem = createNamespaceTestItems(namespaceNode, ctrl, uri);
+        classTestItem = createClassTestItem(classNode, ctrl, uri, namespaceTestItem);
+    } else if (mode === 'testsuite') {
 
-        } else {
-            // Create class test item as a root node
-            classTestItem = createClassTestItem(classNode, ctrl, uri);
-        }
+    } else {
+        // Create class test item as a root node
+        classTestItem = createClassTestItem(classNode, ctrl, uri);
     }
 
     // For each method, create child TestItem
@@ -86,7 +84,6 @@ export async function parseTestFileContents(mode: string, uri: vscode.Uri, ctrl:
             new vscode.Position(methodNode.loc.start.line, methodNode.loc.start.column),
             new vscode.Position(methodNode.loc.end.line, methodNode.loc.end.column)
         );
-        ctrl.items.add(methodTestItem);
 
         // Add as a child of the class TestItem
         classTestItem!.children.add(methodTestItem);
@@ -135,54 +132,81 @@ function createNamespaceTestItems(namespaceNode: any, ctrl: vscode.TestControlle
         basePathParts.push(part);
     }
     const basePath = basePathParts.join('/');
-    
-    // If the TestItem for the namespace has already been created, no further work required
-    let namespaceTestItem = ctrl.items.get(basePath + '/' + namespace);
-    if (namespaceTestItem) {
-        return namespaceTestItem;
+
+    return traverseNamespaceHierarchy(ctrl, basePath, namespaceParts);
+}
+
+function traverseNamespaceHierarchy(ctrl: vscode.TestController, basePath: string, namespaceParts: string[], parentTestItem?: vscode.TestItem): vscode.TestItem {
+    // Construct identifier for the namespace
+    let namespaceLabel = namespaceParts.shift();
+    let namespacePath = '';
+    if (parentTestItem) {
+        namespacePath = parentTestItem.id + '/' + namespaceLabel;
+    } else {
+        namespacePath = basePath + '/' + namespaceLabel;
+    }
+    let namespaceUri = vscode.Uri.parse(namespacePath);
+    let namespaceId = namespaceUri.toString();
+
+    // Check if this already exists as a child of the parent item
+    let namespaceTestItem = undefined;
+    if (parentTestItem) {
+        namespaceTestItem = parentTestItem.children.get(namespaceId);
+    } else {
+        namespaceTestItem = ctrl.items.get(namespaceId);
     }
 
-    // Build tree structure based on namespace hierarchy
-    let namespacePath = basePath;
-    namespaceParts.forEach((part: string) => {
-        // Determine URI path for namespace component
-        namespacePath = namespacePath + '/' + part;
-        const namespaceUri = vscode.Uri.parse(namespacePath);
-
-        // Check if a TestItem has already been created for the namespace component URI
-        let item = ctrl.items.get(namespaceUri.toString());
-        if (!item) {
-            // Create new TestItem for namespace component
-            const itemId = namespaceUri.toString();
-            const label = part;
-            item = ctrl.createTestItem(itemId, label, namespaceUri);
-            item.canResolveChildren = true;
-            ctrl.items.add(item);
-        }
+    // If the namespace does not already exist, create it now
+    if (!namespaceTestItem) {
+        // Create new TestItem for namespace component
+        namespaceTestItem = ctrl.createTestItem(namespaceId, namespaceLabel!, namespaceUri);
+        namespaceTestItem.canResolveChildren = true;
 
         // Add new namespace TestItem as a child in the hierarchy
-        if (namespaceTestItem) {
-            namespaceTestItem.children.add(item);
+        if (parentTestItem) {
+            parentTestItem.children.add(namespaceTestItem);
+        } else {
+            ctrl.items.add(namespaceTestItem);
         }
-        namespaceTestItem = item;
-    });
+    }
 
-    return namespaceTestItem!;
+    // If there are still additional namespace components, continue recursion
+    if (namespaceParts.length > 0) {
+        return traverseNamespaceHierarchy(ctrl, basePath, namespaceParts, namespaceTestItem);
+    }
+
+    // No additional components - this is the end of the recursion
+    return namespaceTestItem;
 }
 
 function createClassTestItem(classNode: any, ctrl: vscode.TestController, uri: vscode.Uri, parentTestItem?: vscode.TestItem): vscode.TestItem {
-    const itemId = uri.toString();
-    const label = classNode.name.name;
-    const classTestItem = ctrl.createTestItem(itemId, label, uri);
-    classTestItem.range = new vscode.Range(
-        new vscode.Position(classNode.loc.start.line, classNode.loc.start.column),
-        new vscode.Position(classNode.loc.end.line, classNode.loc.end.column)
-    );
-    classTestItem.canResolveChildren = true;
-    ctrl.items.add(classTestItem);
-
+    let classId = uri.toString();
+    let classLabel = classNode.name.name;
+    
+    // Check if this already exists as a child of the parent item
+    let classTestItem = undefined;
     if (parentTestItem) {
-        parentTestItem.children.add(classTestItem);
+        classTestItem = parentTestItem.children.get(classId);
+    } else {
+        classTestItem = ctrl.items.get(classId);
+    }
+
+    // If the class does not already exist, create it now
+    if (!classTestItem) {
+        // Create nes TestItem for class
+        classTestItem = ctrl.createTestItem(classId, classLabel, uri);
+        classTestItem.range = new vscode.Range(
+            new vscode.Position(classNode.loc.start.line, classNode.loc.start.column),
+            new vscode.Position(classNode.loc.end.line, classNode.loc.end.column)
+        );
+        classTestItem.canResolveChildren = true;
+    
+        // Add new class TestItem as a child in the hierarchy
+        if (parentTestItem) {
+            parentTestItem.children.add(classTestItem);
+        } else {
+            ctrl.items.add(classTestItem);
+        }
     }
     
     return classTestItem;

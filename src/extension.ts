@@ -1,9 +1,8 @@
 // The module 'vscode' contains the VS Code extensibility API
 // Import the module and reference it with the alias vscode in your code below
-import { TextDecoder } from 'util';
 import * as vscode from 'vscode';
 import { testDataMap, getTestItemType, TestFile, ItemType } from './testTree';
-import { parseTestFileContents } from './parser';
+import * as parser from './parser';
 
 // this method is called when your extension is activated
 // your extension is activated the very first time the command is executed
@@ -16,7 +15,7 @@ export function activate(context: vscode.ExtensionContext) {
 
 	// Refresh handler
 	ctrl.refreshHandler = async () => {
-		await discoverTestFilesInWorkspace(ctrl);
+		await refreshTestFilesInWorkspace(ctrl);
 	};
 
 	// Resolve handler
@@ -26,8 +25,7 @@ export function activate(context: vscode.ExtensionContext) {
 			await discoverTestFilesInWorkspace(ctrl);
 		} else {
 			// We are being asked to resolve children for the supplied TestItem
-			await parseTestFileContents('namespace', item.uri!, ctrl);
-			//await parseTestsInFileContents(ctrl, item);
+			await parseTestFileContents(item.uri!, ctrl);
 		}
 	};
 
@@ -40,15 +38,15 @@ export function activate(context: vscode.ExtensionContext) {
 	);
 
 	context.subscriptions.push(
-		vscode.workspace.onDidChangeConfiguration(e => discoverTestFilesInWorkspace(ctrl)),
-		vscode.workspace.onDidOpenTextDocument(doc => parseTestFileContents('namespace', doc.uri, ctrl, doc.getText())),
-		vscode.workspace.onDidChangeTextDocument(e => parseTestFileContents('namespace', e.document.uri, ctrl, e.document.getText()))
+		vscode.workspace.onDidChangeConfiguration(e => refreshTestFilesInWorkspace(ctrl)),
+		vscode.workspace.onDidOpenTextDocument(doc => parseTestFileContents(doc.uri, ctrl, doc.getText())),
+		vscode.workspace.onDidChangeTextDocument(e => parseTestFileContents(e.document.uri, ctrl, e.document.getText()))
 	);
 
 	// Run initial test discovery on files already present in the workspace
 	console.group('Running initial test discovery for files already present in workspace:');
 	for (const doc of vscode.workspace.textDocuments) {
-		parseTestFileContents('namespace', doc.uri, ctrl, doc.getText());
+		parseTestFileContents(doc.uri, ctrl, doc.getText());
 	}
 	console.groupEnd();
 	console.info('Intial test discovery complete.\n');
@@ -72,34 +70,15 @@ export function activate(context: vscode.ExtensionContext) {
 // this method is called when your extension is deactivated
 export function deactivate() {}
 
-function parseTestsInDocument(controller: vscode.TestController, doc: vscode.TextDocument) {
-	if (doc.uri.scheme === 'file' && doc.uri.path.endsWith('.php')) {
-		const item = findOrCreateTestItemForFile(controller, doc.uri);
-		parseTestsInFileContents(controller, item, doc.getText());
-	}
+async function refreshTestFilesInWorkspace(controller: vscode.TestController) {
+	controller.items.forEach(item => controller.items.delete(item.id));
+	return discoverTestFilesInWorkspace(controller);
 }
 
-async function parseTestsInFileContents(controller: vscode.TestController, item: vscode.TestItem, contents?: string) {
-	// If the file contents have not been provided, load them from disk
-	let uri = item.uri!;
-	console.info(`Parsing '${uri.fsPath}' for tests...`);
-	if (!contents) {
-		try {
-			const rawContent = await vscode.workspace.fs.readFile(uri);
-			return new TextDecoder().decode(rawContent);
-		} catch (e) {
-			console.warn(`Unable to load test file contents for: ${uri.fsPath}`, e);
-			return;
-		}
-	}
-
-	// Create new TestFile instance for file
-	let file = new TestFile();
-	file.updateFromContents(controller, contents, item);
-	item.canResolveChildren = true;
-	
-	// Add item type to the test data map
-	testDataMap.set(item, ItemType.file);
+async function parseTestFileContents(uri: vscode.Uri, controller: vscode.TestController, fileContents?: string) {
+	// Get setting determining test organisation structure
+	const phpUnitConfig = vscode.workspace.getConfiguration('phpunit-test-workbench.phpunit');
+	return await parser.parseTestFileContents(phpUnitConfig.get('testOrganization', 'file'), uri, controller, fileContents);
 }
 
 async function discoverTestFilesInWorkspace(controller: vscode.TestController) {
@@ -117,38 +96,18 @@ async function discoverTestFilesInWorkspace(controller: vscode.TestController) {
 			const watcher = vscode.workspace.createFileSystemWatcher(pattern);
 
 			// Set file related event handlers
-			// watcher.onDidCreate(uri => findOrCreateTestItemForFile(controller, uri));
-			// watcher.onDidChange(uri => parseTestsInFileContents(controller, findOrCreateTestItemForFile(controller, uri)));
-			// watcher.onDidDelete(uri => controller.items.delete(uri.toString()));
-
-			watcher.onDidCreate(uri => parseTestFileContents('namespace', uri, controller));
-			watcher.onDidChange(uri => parseTestFileContents('namespace', uri, controller));
+			watcher.onDidCreate(uri => parseTestFileContents(uri, controller));
+			watcher.onDidChange(uri => parseTestFileContents(uri, controller));
 			watcher.onDidDelete(uri => controller.items.delete(uri.toString()));
 
 			// Find initial set of files for workspace
 			for (const file of await vscode.workspace.findFiles(pattern)) {
-				parseTestFileContents('namespace', file, controller);
+				await parseTestFileContents(file, controller);
 			}
 
 			return watcher;
 		})
 	);
-}
-
-function findOrCreateTestItemForFile(controller: vscode.TestController, uri: vscode.Uri) {
-	// Check if a TestItem has already been created for the supplied URI
-	const existing = controller.items.get(uri.toString());
-	if (existing) {
-		return existing;
-	}
-
-	// Create new TestItem for this file
-	const itemId = uri.toString();
-	const label = uri.path.split('/').pop()!;
-	const item = controller.createTestItem(itemId, label, uri);
-	item.canResolveChildren = true;
-	controller.items.add(item);
-	return item;
 }
 
 async function runHandler(
@@ -180,7 +139,7 @@ async function runHandler(
 			case ItemType.file:
 				// We are running a file - need to check if it has been parsed for test cases
 				if (test.children.size <= 0) {
-					await parseTestsInFileContents(controller, test);
+					await parseTestFileContents(test.uri!, controller);
 				}
 				break;
 			case ItemType.testCase:
