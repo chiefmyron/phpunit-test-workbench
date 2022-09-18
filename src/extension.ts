@@ -1,7 +1,6 @@
 // The module 'vscode' contains the VS Code extensibility API
 // Import the module and reference it with the alias vscode in your code below
 import * as vscode from 'vscode';
-import { testDataMap, getTestItemType, TestFile, ItemType } from './testTree';
 import * as parser from './parser';
 
 // this method is called when your extension is activated
@@ -135,14 +134,14 @@ async function runHandler(
 		}
 
 		// Check type of TestItem we are running
-		switch(getTestItemType(test)) {
-			case ItemType.file:
+		switch(parser.getTestItemType(test)) {
+			case parser.ItemType.class:
 				// We are running a file - need to check if it has been parsed for test cases
 				if (test.children.size <= 0) {
 					await parseTestFileContents(test.uri!, controller);
 				}
 				break;
-			case ItemType.testCase:
+			case parser.ItemType.method:
 				// We are running a test case
 				const start = Date.now();
 				try {

@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/naming-convention */
 /// <reference path="../types/php-parser.d.ts" />
 import Engine from 'php-parser';
 import { TextDecoder } from 'util';
@@ -22,6 +23,18 @@ const engine = Engine.create({
         short_tags: true
     }
 });
+
+export enum ItemType {
+    folder,
+    class,
+    method,
+    testsuite
+}
+export const testDataMap = new WeakMap<vscode.TestItem, ItemType>();
+
+export function getTestItemType(item: vscode.TestItem) {
+    return testDataMap.get(item);
+}
 
 export async function parseTestFileContents(mode: string, uri: vscode.Uri, ctrl: vscode.TestController, fileContents?: string) {
     // Only need to parse PHP files
@@ -87,6 +100,7 @@ export async function parseTestFileContents(mode: string, uri: vscode.Uri, ctrl:
 
         // Add as a child of the class TestItem
         classTestItem!.children.add(methodTestItem);
+        testDataMap.set(methodTestItem, ItemType.method);
     });
 }
 
@@ -168,6 +182,7 @@ function traverseNamespaceHierarchy(ctrl: vscode.TestController, basePath: strin
         } else {
             ctrl.items.add(namespaceTestItem);
         }
+        testDataMap.set(namespaceTestItem, ItemType.folder);
     }
 
     // If there are still additional namespace components, continue recursion
@@ -207,6 +222,7 @@ function createClassTestItem(classNode: any, ctrl: vscode.TestController, uri: v
         } else {
             ctrl.items.add(classTestItem);
         }
+        testDataMap.set(classTestItem, ItemType.class);
     }
     
     return classTestItem;
