@@ -112,7 +112,11 @@ export class TestFileParser {
             // Add as a child of the class TestItem
             classTestItem!.children.add(methodTestItem);
 
-            const methodTestItemDef = new TestItemDefinition(ItemType.method, workspaceFolderUri);
+            // Build PHPUnit Id as the fully qualified class name, plus method name
+            let methodPhpUnitId = testDataMap.get(classTestItem)!.getPhpUnitId();
+            methodPhpUnitId = methodPhpUnitId + '::' + methodName;
+
+            const methodTestItemDef = new TestItemDefinition(ItemType.method, workspaceFolderUri, methodPhpUnitId);
             testDataMap.set(methodTestItem, methodTestItemDef);
         });
     }
@@ -150,13 +154,25 @@ export class TestFileParser {
         const namespace = namespaceNode.name;
         const namespaceParts = namespace.split('\\');
         const filePathParts = namespaceFolderUri.path.split('/');
+        const workspacePathParts = workspaceFolderUri.path.split('/');
     
+        let workspaceRootFound = false;
         let basePathParts: string[] = [];
         for (const part of filePathParts) {
+            basePathParts.push(part);
+
+            if (workspaceRootFound === false && part === workspacePathParts[0]) {
+                workspacePathParts.shift();
+                if (workspacePathParts.length > 0) {
+                    continue;
+                }
+            }
+
             if (part === namespaceParts[0]) {
+                basePathParts.pop();
                 break;
             }
-            basePathParts.push(part);
+            
         }
         const basePath = basePathParts.join('/');
     
@@ -190,12 +206,17 @@ export class TestFileParser {
             namespaceTestItem.canResolveChildren = true;
     
             // Add new namespace TestItem as a child in the hierarchy
+            let namespacePhpUnitId = namespaceLabel;
             if (parentTestItem) {
                 parentTestItem.children.add(namespaceTestItem);
+
+                // Rebuild namespace from label and parent test item, and use as the PHPUnit ID for the item
+                namespacePhpUnitId = testDataMap.get(parentTestItem)!.getPhpUnitId();
+                namespacePhpUnitId = namespacePhpUnitId + '\\' + namespaceLabel;
             } else {
                 ctrl.items.add(namespaceTestItem);
             }
-            const namespaceTestItemDef = new TestItemDefinition(ItemType.folder, workspaceFolderUri);
+            const namespaceTestItemDef = new TestItemDefinition(ItemType.folder, workspaceFolderUri, namespacePhpUnitId);
             testDataMap.set(namespaceTestItem, namespaceTestItemDef);
         }
     
@@ -231,12 +252,17 @@ export class TestFileParser {
             classTestItem.canResolveChildren = true;
         
             // Add new class TestItem as a child in the hierarchy
+            let classPhpUnitId = classLabel;
             if (parentTestItem) {
                 parentTestItem.children.add(classTestItem);
+
+                // Build fully-qualified class name from label and parent namespace test item, and use as the PHPUnit ID for the item
+                classPhpUnitId = testDataMap.get(parentTestItem)!.getPhpUnitId();
+                classPhpUnitId = classPhpUnitId + '\\' + classLabel;
             } else {
                 ctrl.items.add(classTestItem);
             }
-            const classTestItemDef = new TestItemDefinition(ItemType.class, workspaceFolderUri);
+            const classTestItemDef = new TestItemDefinition(ItemType.class, workspaceFolderUri, classPhpUnitId);
             testDataMap.set(classTestItem, classTestItemDef);
         }
         

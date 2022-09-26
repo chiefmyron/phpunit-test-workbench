@@ -10,10 +10,16 @@ export enum ItemType {
 export class TestItemDefinition {
     private type: ItemType;
     private workspaceFolderUri: vscode.Uri;
+    private phpUnitId: string;
 
-    constructor(type: ItemType, workspaceFolderUri: vscode.Uri) {
+    constructor(type: ItemType, workspaceFolderUri: vscode.Uri, phpUnitId?: string) {
         this.type = type;
         this.workspaceFolderUri = workspaceFolderUri;
+        if (phpUnitId) {
+            this.phpUnitId = phpUnitId;
+        } else {
+            this.phpUnitId = '';
+        }
     }
 
     public getType(): ItemType
@@ -23,5 +29,9 @@ export class TestItemDefinition {
     
     public getWorkspaceFolderUri(): vscode.Uri {
         return this.workspaceFolderUri;
+    }
+
+    public getPhpUnitId(): string {
+        return this.phpUnitId;
     }
 }

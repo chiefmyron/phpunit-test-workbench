@@ -1,8 +1,8 @@
 // The module 'vscode' contains the VS Code extensibility API
 // Import the module and reference it with the alias vscode in your code below
-import { exec } from 'child_process';
 import * as vscode from 'vscode';
-import { TestFileParser } from './parser/TestFileParser';
+import { testDataMap, TestFileParser } from './parser/TestFileParser';
+import { ItemType } from './parser/TestItemDefinition';
 import { TestRunner } from './runner/TestRunner';
 
 // this method is called when your extension is activated
@@ -102,7 +102,8 @@ async function discoverTestFilesInWorkspace(parser: TestFileParser) {
 
 	return Promise.all(
 		vscode.workspace.workspaceFolders.map(async workspaceFolder => {
-			const pattern = new vscode.RelativePattern(workspaceFolder, phpUnitConfig.get('testsPath', '**/*.php'));
+			const patternString = phpUnitConfig.get('locatorPatternTests', '{test,tests,Test,Tests}/**/*Test.php');
+			const pattern = new vscode.RelativePattern(workspaceFolder, patternString);
 			const watcher = vscode.workspace.createFileSystemWatcher(pattern);
 
 			// Set file related event handlers
@@ -128,25 +129,47 @@ async function runHandler(
 	const run = controller.createTestRun(request);
 	const queue: vscode.TestItem[] = [];
 
+	// Get details of the first TestItem in the request (this should be the parent)
+	let parentTestItem: vscode.TestItem;
+	if (request.include) {
+		// Run specific subset of tests
+		parentTestItem = request.include[0]!;
+
+		// Get the workspace folder and settings for the parent test
+		let parentTestItemDef = testDataMap.get(parentTestItem)!;
+		let workspaceFolder = vscode.workspace.getWorkspaceFolder(parentTestItemDef!.getWorkspaceFolderUri());
+		if (!workspaceFolder) {
+			console.warn(`Unable to locate workspace folder for ${parentTestItemDef.getWorkspaceFolderUri()}`);
+			return;
+		}
+
+		// Initialise test runner
+		const runner = new TestRunner();
+		
+		// Determine whether we are running for a folder, class or method within a class
+		let args = new Map<string, string>();
+		if (parentTestItemDef.getType() === ItemType.folder) {
+			runner.setPhpUnitTargetPath(parentTestItemDef.getPhpUnitId());
+		} else if (parentTestItemDef.getType() === ItemType.class) {
+			runner.setPhpUnitTargetPath(parentTestItem.uri!.fsPath);
+		} else if (parentTestItemDef.getType() === ItemType.method) {
+			args.set('--filter', '\'' + parentTestItemDef.getPhpUnitId().replace(/\\/g, "\\\\") + '\'');
+		}
+
+		runner.runCommand(workspaceFolder, args);
+
+	} else {
+
+	}
+
+
+
 	// Loop through all included tests (or all known tests if no includes specified) and add to queue
 	if (request.include) {
 		request.include.forEach(test => queue.push(test));
 	} else {
 		controller.items.forEach(test => queue.push(test));
 	}
-
-
-	await exec('dir', (error, stdout, stderr) => {
-		if (error) {
-			console.error(`error: ${error.message}`);
-		}
-
-		if (stderr) {
-			console.error(`stderr: ${stderr}`);
-		}
-
-		console.log(`stdout:\n${stdout}`);
-	});
 
 
 	// For every queued test, attempt to run it

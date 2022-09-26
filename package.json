@@ -85,11 +85,23 @@
           "default": "file",
           "markdownDescription": "Describes the way tests are organised in the Testing panel."
         },
-        "phpunit-test-workbench.phpunit.testsPath": {
+        "phpunit-test-workbench.phpunit.locatorPatternTests": {
           "scope": "resource",
           "type": "string",
-          "markdownDescription": "The glob(s) describing the location of your test files. Default pattern is `{test,tests,Test,Tests}/**/*Test.php`.",
+          "markdownDescription": "The glob describing the location of your test files. Default pattern is `{test,tests,Test,Tests}/**/*Test.php`.",
           "default": "{test,tests,Test,Tests}/**/*Test.php"
+        },
+        "phpunit-test-workbench.phpunit.locatorPatternPhpUnitXml": {
+          "scope": "resource",
+          "type": "string",
+          "markdownDescription": "The glob describing the location of your `phpunit.xml` configuration file. If left blank, PHPUnit will fall back to default behaviour and attempt to find a `phpunit.xml` file in the test directory.",
+          "default": "{test,tests,Test,Tests}/phpunit.xml"
+        },
+        "phpunit-test-workbench.phpunit.targetDirectory": {
+          "scope": "resource",
+          "type": "string",
+          "markdownDescription": "Relative path from the workspace folder root to the directory to run tests from (usually the `tests` folder). If left blank, the workspace folder root will be used. Note that if a `phpunit.xml` file has been found with testsuites defined, this setting is ignored.",
+          "default": ""
         }
       }
     }
