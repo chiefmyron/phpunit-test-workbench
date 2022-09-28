@@ -66,7 +66,13 @@ export class TestFileParser {
         }
         
         // Parse test file contents
-        const tree: any = this.parser.parseCode(testFileContents);
+        let tree: any;
+        try {
+            tree = this.parser.parseCode(testFileContents);
+        } catch (e) {
+            console.error(e);
+            return;
+        }
     
         // Get the namespace for the test file
         const namespaceNode = this.findNamespaceNode(tree.children);
@@ -104,10 +110,12 @@ export class TestFileParser {
             const methodName = methodNode.name.name;
             const methodId = `${classTestItem!.id}::${methodName}`;
             const methodTestItem = this.ctrl.createTestItem(methodId, methodName, testFileUri);
-            methodTestItem.range = new vscode.Range(
-                new vscode.Position(methodNode.loc.start.line, methodNode.loc.start.column),
-                new vscode.Position(methodNode.loc.end.line, methodNode.loc.end.column)
-            );
+            if (methodNode.loc) {
+                methodTestItem.range = new vscode.Range(
+                    new vscode.Position(methodNode.loc.start.line, methodNode.loc.start.column),
+                    new vscode.Position(methodNode.loc.end.line, methodNode.loc.end.column)
+                );
+            }
     
             // Add as a child of the class TestItem
             classTestItem!.children.add(methodTestItem);

@@ -1,5 +1,11 @@
-import { exec } from 'child_process';
+import { exec, ExecException } from 'child_process';
 import * as vscode from 'vscode';
+import { TestRunResultItem } from './TestRunResultItem';
+import { TestRunResultParser } from './TestRunResultParser';
+import * as util from 'util';
+
+// Create promisified version of child process execution
+const cp_exec = util.promisify(exec);
 
 export class TestRunner {
     private phpBinaryPath: string = '';
@@ -11,7 +17,7 @@ export class TestRunner {
         this.phpUnitTargetPath = target;
     }
     
-    public async runCommand(workspaceFolder: vscode.WorkspaceFolder, args: Map<string, string> ) {
+    public async runCommand(workspaceFolder: vscode.WorkspaceFolder, args: Map<string, string>): Promise<TestRunResultItem[]> {
         // Use provided settings for runner, if provided
         const settings = vscode.workspace.getConfiguration('phpunit-test-workbench', workspaceFolder);
         
@@ -41,17 +47,27 @@ export class TestRunner {
         console.log('[TestRunner] Executing command: ' + command);
 
         // Attempt to run command
-		await exec(command, (error, stdout, stderr) => {
-			if (error) {
-				console.error(`error: ${error.message}`);
-			}
-	
-			if (stderr) {
-				console.error(`stderr: ${stderr}`);
-			}
-	
-			console.log(`stdout:\n${stdout}`);
-		});
+        let results: TestRunResultItem[] = [];
+        const parser = new TestRunResultParser();
+        try {
+            const { stdout, stderr } = await cp_exec(command);
+
+            if (stderr) {
+                console.error(`[TestRunner] Std error: ${stderr}`);
+            }
+            if (stdout) {
+                results = parser.parse(stdout);
+            }
+        } catch (e: any) {
+            // Failed tests will result in the command returning an error code, but the
+            // output is the same as a successful run and can still be parsed in the same way
+            if (e.stdout) {
+                results = parser.parse(e.stdout.toString());
+            } else {
+                console.error(e);
+            }
+        }
+        return results;
     }
 
     private async initPhpBinaryPath(settingValue?: string) {

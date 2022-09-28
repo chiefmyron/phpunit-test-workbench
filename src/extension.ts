@@ -4,6 +4,7 @@ import * as vscode from 'vscode';
 import { testDataMap, TestFileParser } from './parser/TestFileParser';
 import { ItemType } from './parser/TestItemDefinition';
 import { TestRunner } from './runner/TestRunner';
+import { TestRunResultItem, TestRunResultStatus } from './runner/TestRunResultItem';
 
 // this method is called when your extension is activated
 // your extension is activated the very first time the command is executed
@@ -121,19 +122,32 @@ async function discoverTestFilesInWorkspace(parser: TestFileParser) {
 	);
 }
 
+function buildTestRunQueue(run: vscode.TestRun, queue: Map<string, vscode.TestItem>, item: vscode.TestItem) {
+	// Mark the test as running
+	run.started(item);
+	
+	// Add to the queue for later lookup by ID
+	queue.set(item.id, item);
+	item.children.forEach(child => buildTestRunQueue(run, queue, child));
+	return queue;
+}
+
 async function runHandler(
 	request: vscode.TestRunRequest,
 	token: vscode.CancellationToken,
 	controller: vscode.TestController
 ) {
 	const run = controller.createTestRun(request);
-	const queue: vscode.TestItem[] = [];
+	const queue = new Map<string, vscode.TestItem>();
+	const runner = new TestRunner();
 
 	// Get details of the first TestItem in the request (this should be the parent)
 	let parentTestItem: vscode.TestItem;
+	let testRunResults: TestRunResultItem[] = [];
 	if (request.include) {
 		// Run specific subset of tests
 		parentTestItem = request.include[0]!;
+		buildTestRunQueue(run, queue, parentTestItem);
 
 		// Get the workspace folder and settings for the parent test
 		let parentTestItemDef = testDataMap.get(parentTestItem)!;
@@ -143,9 +157,6 @@ async function runHandler(
 			return;
 		}
 
-		// Initialise test runner
-		const runner = new TestRunner();
-		
 		// Determine whether we are running for a folder, class or method within a class
 		let args = new Map<string, string>();
 		if (parentTestItemDef.getType() === ItemType.folder) {
@@ -156,53 +167,64 @@ async function runHandler(
 			args.set('--filter', '\'' + parentTestItemDef.getPhpUnitId().replace(/\\/g, "\\\\") + '\'');
 		}
 
-		runner.runCommand(workspaceFolder, args);
-
+		testRunResults = await runner.runCommand(workspaceFolder, args);
 	} else {
+		// Run all top-level test items, and their children
+		let runRequired: boolean = false;
+		let currentWorkspaceFolder: vscode.WorkspaceFolder | undefined;
+		for (let [key, item] of controller.items) {
+			let itemDef = testDataMap.get(item);
+			let workspaceFolder = vscode.workspace.getWorkspaceFolder(itemDef!.getWorkspaceFolderUri());
+			if (currentWorkspaceFolder && workspaceFolder !== currentWorkspaceFolder) {
+				// Execute any tests from the current workspace
+				let results = await runner.runCommand(currentWorkspaceFolder, new Map<string, string>());
+				testRunResults = testRunResults.concat(results);
+				runRequired = false;
+			} else {
+				// Set this as the current workspace folder and start building up the test run queue
+				currentWorkspaceFolder = workspaceFolder;
+				buildTestRunQueue(run, queue, item);
+				runRequired = true;
+			}
+		};
 
+		// Clean up final run if required
+		if (runRequired === true && currentWorkspaceFolder) {
+			let results = await runner.runCommand(currentWorkspaceFolder, new Map<string, string>());
+			testRunResults = testRunResults.concat(results);
+		}
 	}
 
-
-
-	// Loop through all included tests (or all known tests if no includes specified) and add to queue
-	if (request.include) {
-		request.include.forEach(test => queue.push(test));
-	} else {
-		controller.items.forEach(test => queue.push(test));
-	}
-
-
-	// For every queued test, attempt to run it
-	while (queue.length > 0 && !token.isCancellationRequested) {
-		const test = queue.pop()!;
-
-		// Check if the user asked to exclude this test
-		if (request.exclude?.includes(test)) {
+	// Loop through test run results and set status and message for related TestItems
+	for (const result of testRunResults) {
+		let item = queue.get(result.getTestItemId());
+		if (!item) {
 			continue;
 		}
 
-		// Check type of TestItem we are running
-		/*switch(parser.getTestItemType(test)) {
-			case parser.ItemType.class:
-				// We are running a file - need to check if it has been parsed for test cases
-				if (test.children.size <= 0) {
-					//await parseTestFileContents(test.uri!, controller);
-				}
+		// Set status, duration and messages
+		let message;
+		switch (result.getStatus()) {
+			case TestRunResultStatus.passed:
+				run.passed(item, result.getDuration());
 				break;
-			case parser.ItemType.method:
-				// We are running a test case
-				const start = Date.now();
-				try {
-					// TODO: Actual test execution
-					run.passed(test, Date.now() - start);
-				} catch (e) {
-					run.failed(test, new vscode.TestMessage('Test failed!'), Date.now() - start);
+			case TestRunResultStatus.failed:
+				// Format failure message
+				message = new vscode.MarkdownString('**' + result.getMessage() + '**');
+				if (result.getMessageDetail().length > 0) {
+					message.appendMarkdown('\n' + result.getMessageDetail().replace("|n", "\n"));
 				}
+				run.failed(item, new vscode.TestMessage(message), result.getDuration());
 				break;
-		}*/
-
-		// If the test has any children, add them to the queue now
-		test.children.forEach(test => queue.push(test));
+			case TestRunResultStatus.ignored:
+				// Format ignore message
+				message = new vscode.MarkdownString('**' + result.getMessage() + '**');
+				if (result.getMessageDetail().length > 0) {
+					message.appendMarkdown('\n' + result.getMessageDetail().replace("|n", "\n"));
+				}
+				run.skipped(item);
+				break;
+		}
 	}
 
 	// Mark the test run as complete
