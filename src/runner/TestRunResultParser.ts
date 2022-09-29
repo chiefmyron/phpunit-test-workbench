@@ -1,13 +1,21 @@
 import { TestRunResultItem, TestRunResultStatus } from "./TestRunResultItem";
 import * as vscode from 'vscode';
+import { Logger } from "../output";
 
 const patternTestStarted = new RegExp(/##teamcity\[testStarted name='(.*)' locationHint='php_qn:\/\/(.*)' flowId='(.*)']/);
 const patternTestFailed = new RegExp(/##teamcity\[testFailed name='(.*)' message='(.*)' details='(.*)' duration='(\d*)' flowId='(.*)']/);
 const patternTestIgnored = new RegExp(/##teamcity\[testIgnored name='(.*)' message='(.*)' details='(.*)' duration='(\d*)' flowId='(.*)']/);
 const patternTestFinished = new RegExp(/##teamcity\[testFinished name='(.*)' duration='(\d*)' flowId='(.*)']/);
+const patternSummaryOk = new RegExp(/OK \((\d*) tests, (\d*) assertions/);
+const patternSummaryFailed = new RegExp(/Tests: (\d*), Assertions: (\d*), Failures: (\d*)/);
 
 export class TestRunResultParser {
+    private logger: Logger;
     private results: TestRunResultItem[] = [];
+
+    constructor(logger: Logger) {
+        this.logger = logger;
+    }
 
     public parse(contents: string): TestRunResultItem[] {
         this.results = []; // Reset results list
@@ -79,6 +87,21 @@ export class TestRunResultParser {
                     this.results.push(result);
                 }
                 continue;
+            }
+
+            // Check if the line is a test run summary
+            if (m = line.match(patternSummaryOk)) {
+                let numTests = parseInt(m.at(1)!);
+                let numAssertions = parseInt(m.at(2)!);
+                this.logger.info(`Test run completed successfully! (${numTests} tests, ${numAssertions} assertions)`);
+            }
+
+            // Check if the line is a test run summary (with failed tests)
+            if (m = line.match(patternSummaryFailed)) {
+                let numTests = parseInt(m.at(1)!);
+                let numAssertions = parseInt(m.at(2)!);
+                let numFailures = parseInt(m.at(3)!);
+                this.logger.error(`Test run completed with failures! (${numTests} tests, ${numAssertions} assertions, ${numFailures} failures)`);
             }
         }
 

@@ -3,6 +3,7 @@
 import Engine from 'php-parser';
 import { TextDecoder } from 'util';
 import * as vscode from 'vscode';
+import { Logger } from '../output';
 import { ItemType, TestItemDefinition } from './TestItemDefinition';
 
 export const testDataMap = new WeakMap<vscode.TestItem, TestItemDefinition>();
@@ -15,9 +16,13 @@ export class TestFileParser {
     public ctrl: vscode.TestController;
     private optTestOrganisationMode: string = 'file';
     private parser: Engine;
+    private logger: Logger;
 
-    constructor(ctrl: vscode.TestController) {
+    constructor(ctrl: vscode.TestController, logger: Logger) {
         this.ctrl = ctrl;
+        this.logger = logger;
+
+        this.logger.trace('Creating new TestFileParser instance...');
         this.parser = Engine.create({
             ast: {
                 withPositions: true,
@@ -37,6 +42,7 @@ export class TestFileParser {
                 short_tags: true
             }
         });
+        this.logger.trace('TestFileParser instance created!');
     }
 
     public setTestOrganisationMode(mode: string) {
@@ -54,13 +60,15 @@ export class TestFileParser {
         }
         
         // Check if we need to load file contents from disk
+        this.logger.trace(`Parsing contents of file for test cases: ${testFileUri.toString()}`);
         if (!testFileContents) {
-            console.info(`Loading contents of '${testFileUri.fsPath}' from disk...`);
+            this.logger.trace('    Loading test file contents from disk...');
             try {
                 const rawContent = await vscode.workspace.fs.readFile(testFileUri);
                 testFileContents = new TextDecoder().decode(rawContent);
+                this.logger.trace('    Loaded!');
             } catch (e) {
-                console.warn('Unable to load test file contents!', e);
+                this.logger.warn('    Unable to load test file content! Error message: ' + e);
                 return;
             }
         }
@@ -70,21 +78,21 @@ export class TestFileParser {
         try {
             tree = this.parser.parseCode(testFileContents);
         } catch (e) {
-            console.error(e);
+            this.logger.warn('    An error occurred while parsing the test file! Error message: ' + e);
             return;
         }
     
         // Get the namespace for the test file
         const namespaceNode = this.findNamespaceNode(tree.children);
         if (!namespaceNode) {
-            console.warn(`Unable to find namespace definition in test file: ${testFileUri.toString()}`);
+           this.logger.info(    `Unable to find namespace definition in test file: ${testFileUri.toString()}`);
         }
     
         // Get classes for the test file
         const namespaceChildNodes = namespaceNode ? namespaceNode.children : tree;
         const classNode = this.findClassNode(namespaceChildNodes);
         if (!classNode) {
-            console.error(`Unable to find class definition in test file: ${testFileUri.toString()}`);
+            this.logger.warn(    `Unable to find class definition in test file: ${testFileUri.toString()}`);
             return;
         }
     
@@ -116,6 +124,7 @@ export class TestFileParser {
                     new vscode.Position(methodNode.loc.end.line, methodNode.loc.end.column)
                 );
             }
+            this.logger.trace('    Created new TestItem for method: ' + methodId);
     
             // Add as a child of the class TestItem
             classTestItem!.children.add(methodTestItem);
@@ -127,6 +136,7 @@ export class TestFileParser {
             const methodTestItemDef = new TestItemDefinition(ItemType.method, workspaceFolderUri, methodPhpUnitId);
             testDataMap.set(methodTestItem, methodTestItemDef);
         });
+        this.logger.trace(`Finished parsing of test file: ${testFileUri.toString()}`);
     }
     
     private findNamespaceNode(nodes: any[]): any {
@@ -212,6 +222,7 @@ export class TestFileParser {
             // Create new TestItem for namespace component
             namespaceTestItem = ctrl.createTestItem(namespaceId, namespaceLabel!, namespaceUri);
             namespaceTestItem.canResolveChildren = true;
+            this.logger.trace('    Created new TestItem for namespace component: ' + namespaceId);
     
             // Add new namespace TestItem as a child in the hierarchy
             let namespacePhpUnitId = namespaceLabel;
@@ -258,6 +269,7 @@ export class TestFileParser {
                 new vscode.Position(classNode.loc.end.line, classNode.loc.end.column)
             );
             classTestItem.canResolveChildren = true;
+            this.logger.trace('    Created new TestItem for class: ' + classId);
         
             // Add new class TestItem as a child in the hierarchy
             let classPhpUnitId = classLabel;

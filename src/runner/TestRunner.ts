@@ -3,15 +3,21 @@ import * as vscode from 'vscode';
 import { TestRunResultItem } from './TestRunResultItem';
 import { TestRunResultParser } from './TestRunResultParser';
 import * as util from 'util';
+import { Logger } from '../output';
 
 // Create promisified version of child process execution
 const cp_exec = util.promisify(exec);
 
 export class TestRunner {
+    private logger: Logger;
     private phpBinaryPath: string = '';
     private phpUnitBinaryPath: string = '';
     private phpUnitConfigPath: string = '';
     private phpUnitTargetPath: string = '';
+
+    constructor(logger: Logger) {
+        this.logger = logger;
+    }
 
     public setPhpUnitTargetPath(target: string) {
         this.phpUnitTargetPath = target;
@@ -44,27 +50,28 @@ export class TestRunner {
 
         // Finish with target folder or file
         command = command + ' ' + this.phpUnitTargetPath;
-        console.log('[TestRunner] Executing command: ' + command);
+        this.logger.trace('Executing command to start test run: ' + command);
 
         // Attempt to run command
         let results: TestRunResultItem[] = [];
-        const parser = new TestRunResultParser();
+        const parser = new TestRunResultParser(this.logger);
         try {
             const { stdout, stderr } = await cp_exec(command);
-
             if (stderr) {
-                console.error(`[TestRunner] Std error: ${stderr}`);
+                this.logger.error(stderr);
             }
             if (stdout) {
+                this.logger.trace(stdout);
                 results = parser.parse(stdout);
             }
         } catch (e: any) {
             // Failed tests will result in the command returning an error code, but the
             // output is the same as a successful run and can still be parsed in the same way
             if (e.stdout) {
+                this.logger.trace(e.stdout);
                 results = parser.parse(e.stdout.toString());
             } else {
-                console.error(e);
+                this.logger.error(e);
             }
         }
         return results;
@@ -77,7 +84,7 @@ export class TestRunner {
                 await vscode.workspace.fs.stat(vscode.Uri.parse(settingValue));
                 this.phpBinaryPath = settingValue;
             } catch {
-                console.warn(`[TestRunner] Could not find PHP binary at location: ${settingValue}`);
+                this.logger.warn(`    Could not find PHP binary specified in settings: ${settingValue}`);
             }
         }
 
@@ -85,7 +92,7 @@ export class TestRunner {
             // Setting was either not provided or not successful - assume binary is available via $PATH
             this.phpBinaryPath = 'php';
         }
-        console.info(`[TestRunner] Using PHP binary path: ${this.phpBinaryPath}`);
+        this.logger.info(`    Using PHP binary path: ${this.phpBinaryPath}`);
     }
 
     private async initPhpUnitBinaryPath(workspaceFolder: vscode.WorkspaceFolder, settingValue?: string) {
@@ -107,7 +114,7 @@ export class TestRunner {
                 this.phpUnitBinaryPath = pathOption.fsPath;
                 break;
             } catch {
-                console.warn(`[TestRunner] Could not find PHPUnit binary at location: ${pathOption.fsPath}`);
+                this.logger.warn(`    Could not find PHPUnit binary specified in settings or in common fallback location: ${pathOption.fsPath}`);
             }
         }
 
@@ -119,7 +126,7 @@ export class TestRunner {
                 this.phpUnitBinaryPath = 'phpunit';
             }
         }
-        console.info(`[TestRunner] Using PHPUnit binary path: ${this.phpUnitBinaryPath}`);
+        this.logger.info(`    Using PHPUnit binary path: ${this.phpUnitBinaryPath}`);
     }
 
     private async initPhpUnitConfigPath(workspaceFolder: vscode.WorkspaceFolder, settingValue?: string) {
@@ -133,10 +140,11 @@ export class TestRunner {
 		await vscode.workspace.findFiles(phpUnitConfigPattern).then((files: vscode.Uri[]) => {
 			files.forEach((file: vscode.Uri) => {
 				this.phpUnitConfigPath = file.fsPath;
+                this.logger.info(`    Using PHPUnit configuration file: ${this.phpUnitConfigPath}`);
                 return;
 			});
 		});
-        console.warn(`[TestRunner] No configuration file detected!`);
+        this.logger.warn(`    No configuration file detected!`);
     }
 
     private async initPhpUnitTargetPath(workspaceFolder: vscode.WorkspaceFolder, settingValue?: string) {
@@ -151,10 +159,11 @@ export class TestRunner {
                 let targetPathUri = workspaceFolder.uri.with({ path: workspaceFolder.uri.path + '/' + settingValue });
                 await vscode.workspace.fs.stat(targetPathUri).then(stat => {
                     this.phpUnitTargetPath = targetPathUri.fsPath;
+                    this.logger.info(`    Using PHPUnit target directory: ${this.phpUnitTargetPath}`);
                     return;
                 });
             } catch {
-                console.warn(`[TestRunner] Could not find PHPUnit target directory at location: ${settingValue}`);
+                this.logger.warn(`    Could not find PHPUnit target directory specified in settings: ${settingValue}`);
             }
         }
 

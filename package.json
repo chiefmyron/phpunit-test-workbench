@@ -25,19 +25,23 @@
       "title": "PHPUnit Test Workbench",
       "properties": {
         "phpunit-test-workbench.log.level": {
-          "scope": "resource",
-          "type": "string",
+          "scope": "machine",
+          "type": "number",
           "enum": [
-            "none",
-            "messages",
-            "trace"
+            0,
+            1,
+            2,
+            3,
+            4
           ],
           "enumItemLabels": [
-            "No log messages",
-            "Standard messages only",
-            "Verbose messaging"
+            "Trace",
+            "Information",
+            "Warning",
+            "Error",
+            "None"
           ],
-          "default": "messages",
+          "default": 1,
           "markdownDescription": "Set the level of detail for log messages."
         },
         "phpunit-test-workbench.log.channel": {

@@ -1,6 +1,7 @@
 // The module 'vscode' contains the VS Code extensibility API
 // Import the module and reference it with the alias vscode in your code below
 import * as vscode from 'vscode';
+import { Logger } from './output';
 import { testDataMap, TestFileParser } from './parser/TestFileParser';
 import { ItemType } from './parser/TestItemDefinition';
 import { TestRunner } from './runner/TestRunner';
@@ -9,15 +10,24 @@ import { TestRunResultItem, TestRunResultStatus } from './runner/TestRunResultIt
 // this method is called when your extension is activated
 // your extension is activated the very first time the command is executed
 export function activate(context: vscode.ExtensionContext) {
-	console.info('Beginning activation of "phpunit-test-workbench" extension...\n');
+	// Retrieve machine level settings
+	const settings = vscode.workspace.getConfiguration('phpunit-test-workbench');
+	const settingTestOrgMethod = settings.get('phpunit.testOrganization', 'file');
+
+	// Create new logger
+	const logger = new Logger();
+	logger.trace('Beginning activation of "phpunit-test-workbench" extension...');
 
 	// Create test controller
+	logger.trace('    Creating test controller');
 	const ctrl = vscode.tests.createTestController('phpunitTestController', 'PHPUnit Test Workbench');
 	context.subscriptions.push(ctrl);
 
 	// Create test file parser
-	const parser = new TestFileParser(ctrl);
-	parser.setTestOrganisationMode(vscode.workspace.getConfiguration('phpunit-test-workbench.phpunit').get('testOrganization', 'file'));
+	logger.trace('    Creating test file parser');
+	logger.trace(`        - Test organization method: ${settingTestOrgMethod}`);
+	const parser = new TestFileParser(ctrl, logger);
+	parser.setTestOrganisationMode(settingTestOrgMethod);
 
 	// Refresh handler
 	ctrl.refreshHandler = async () => {
@@ -40,7 +50,7 @@ export function activate(context: vscode.ExtensionContext) {
 	ctrl.createRunProfile(
 		'Run tests',
 		vscode.TestRunProfileKind.Run,
-		(request, token) => { runHandler(request, token, ctrl); },
+		(request, token) => { runHandler(request, token, ctrl, logger); },
 		true
 	);
 
@@ -51,27 +61,13 @@ export function activate(context: vscode.ExtensionContext) {
 	);
 
 	// Run initial test discovery on files already present in the workspace
-	console.group('Running initial test discovery for files already present in workspace:');
+	logger.trace('    Run initial test discovery against files already open in the workspace');
 	for (const doc of vscode.workspace.textDocuments) {
 		parseOpenDocument(parser, doc);
 	}
-	console.groupEnd();
-	console.info('Intial test discovery complete.\n');
 
-	// Use the console to output diagnostic information (console.log) and errors (console.error)
-	// This line of code will only be executed once when your extension is activated
-	console.info('Congratulations, your extension "phpunit-test-workbench" is now active!');
-
-	// The command has been defined in the package.json file
-	// Now provide the implementation of the command with registerCommand
-	// The commandId parameter must match the command field in package.json
-	let disposable = vscode.commands.registerCommand('phpunit-test-workbench.helloWorld', () => {
-		// The code you place here will be executed every time your command is executed
-		// Display a message box to the user
-		vscode.window.showInformationMessage('Hello World from PHPUnit Test Workbench!');
-	});
-
-	context.subscriptions.push(disposable);
+	logger.trace('Extension "phpunit-test-workbench" activated!');
+	logger.trace('');
 }
 
 // this method is called when your extension is deactivated
@@ -135,13 +131,16 @@ function buildTestRunQueue(run: vscode.TestRun, queue: Map<string, vscode.TestIt
 async function runHandler(
 	request: vscode.TestRunRequest,
 	token: vscode.CancellationToken,
-	controller: vscode.TestController
+	controller: vscode.TestController,
+	logger: Logger
 ) {
 	const run = controller.createTestRun(request);
 	const queue = new Map<string, vscode.TestItem>();
-	const runner = new TestRunner();
+	const runner = new TestRunner(logger);
 
 	// Get details of the first TestItem in the request (this should be the parent)
+	logger.showOutputChannel();
+	logger.info('Starting new test run...');
 	let parentTestItem: vscode.TestItem;
 	let testRunResults: TestRunResultItem[] = [];
 	if (request.include) {
@@ -153,14 +152,14 @@ async function runHandler(
 		let parentTestItemDef = testDataMap.get(parentTestItem)!;
 		let workspaceFolder = vscode.workspace.getWorkspaceFolder(parentTestItemDef!.getWorkspaceFolderUri());
 		if (!workspaceFolder) {
-			console.warn(`Unable to locate workspace folder for ${parentTestItemDef.getWorkspaceFolderUri()}`);
+			logger.warn(`Unable to locate workspace folder for ${parentTestItemDef.getWorkspaceFolderUri()}`);
 			return;
 		}
 
 		// Determine whether we are running for a folder, class or method within a class
 		let args = new Map<string, string>();
 		if (parentTestItemDef.getType() === ItemType.folder) {
-			runner.setPhpUnitTargetPath(parentTestItemDef.getPhpUnitId());
+			runner.setPhpUnitTargetPath(parentTestItem.uri!.fsPath);
 		} else if (parentTestItemDef.getType() === ItemType.class) {
 			runner.setPhpUnitTargetPath(parentTestItem.uri!.fsPath);
 		} else if (parentTestItemDef.getType() === ItemType.method) {
@@ -206,6 +205,7 @@ async function runHandler(
 		let message;
 		switch (result.getStatus()) {
 			case TestRunResultStatus.passed:
+				logger.info('    PASSED: ' + item.id);
 				run.passed(item, result.getDuration());
 				break;
 			case TestRunResultStatus.failed:
@@ -214,6 +214,8 @@ async function runHandler(
 				if (result.getMessageDetail().length > 0) {
 					message.appendMarkdown('\n' + result.getMessageDetail().replace("|n", "\n"));
 				}
+				logger.error('    FAILED: ' + item.id);
+				logger.error('        - Failure reason: ' + message);
 				run.failed(item, new vscode.TestMessage(message), result.getDuration());
 				break;
 			case TestRunResultStatus.ignored:
@@ -222,11 +224,13 @@ async function runHandler(
 				if (result.getMessageDetail().length > 0) {
 					message.appendMarkdown('\n' + result.getMessageDetail().replace("|n", "\n"));
 				}
+				logger.error('    IGNORED: ' + item.id);
 				run.skipped(item);
 				break;
 		}
 	}
 
 	// Mark the test run as complete
+	logger.info('Test run completed!');
 	run.end();
 }
