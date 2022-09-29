@@ -19,13 +19,12 @@ export function activate(context: vscode.ExtensionContext) {
 	logger.trace('Beginning activation of "phpunit-test-workbench" extension...');
 
 	// Create test controller
-	logger.trace('    Creating test controller');
+	logger.trace('Creating test controller');
 	const ctrl = vscode.tests.createTestController('phpunitTestController', 'PHPUnit Test Workbench');
 	context.subscriptions.push(ctrl);
 
 	// Create test file parser
-	logger.trace('    Creating test file parser');
-	logger.trace(`        - Test organization method: ${settingTestOrgMethod}`);
+	logger.trace(`Creating test file parser (test organization method: ${settingTestOrgMethod})`);
 	const parser = new TestFileParser(ctrl, logger);
 	parser.setTestOrganisationMode(settingTestOrgMethod);
 
@@ -61,7 +60,7 @@ export function activate(context: vscode.ExtensionContext) {
 	);
 
 	// Run initial test discovery on files already present in the workspace
-	logger.trace('    Run initial test discovery against files already open in the workspace');
+	logger.trace('Run initial test discovery against files already open in the workspace');
 	for (const doc of vscode.workspace.textDocuments) {
 		parseOpenDocument(parser, doc);
 	}

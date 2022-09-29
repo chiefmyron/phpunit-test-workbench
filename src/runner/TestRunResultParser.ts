@@ -8,6 +8,7 @@ const patternTestIgnored = new RegExp(/##teamcity\[testIgnored name='(.*)' messa
 const patternTestFinished = new RegExp(/##teamcity\[testFinished name='(.*)' duration='(\d*)' flowId='(.*)']/);
 const patternSummaryOk = new RegExp(/OK \((\d*) tests, (\d*) assertions/);
 const patternSummaryFailed = new RegExp(/Tests: (\d*), Assertions: (\d*), Failures: (\d*)/);
+const patternFatalError = new RegExp(/Fatal error: (.*)/);
 
 export class TestRunResultParser {
     private logger: Logger;
@@ -94,6 +95,7 @@ export class TestRunResultParser {
                 let numTests = parseInt(m.at(1)!);
                 let numAssertions = parseInt(m.at(2)!);
                 this.logger.info(`Test run completed successfully! (${numTests} tests, ${numAssertions} assertions)`);
+                break;
             }
 
             // Check if the line is a test run summary (with failed tests)
@@ -102,6 +104,19 @@ export class TestRunResultParser {
                 let numAssertions = parseInt(m.at(2)!);
                 let numFailures = parseInt(m.at(3)!);
                 this.logger.error(`Test run completed with failures! (${numTests} tests, ${numAssertions} assertions, ${numFailures} failures)`);
+                break;
+            }
+
+            // Check if a fatal error occurred
+            if (m = line.match(patternFatalError)) {
+                let errorMessage = m.at(1)!;
+                this.logger.error(`Fatal error occurred while running tests: ${errorMessage}`);
+                vscode.window.showErrorMessage('Fatal error occurred while executing PHPUnit test run', { detail: errorMessage, modal: false }, 'View output').then(item => {
+                    if (item === 'View output') {
+                        this.logger.showOutputChannel();
+                    }
+                });
+                break;
             }
         }
 

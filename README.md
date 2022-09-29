@@ -1,71 +1,44 @@
-# phpunit-test-workbench README
+# PHPUnit Test Workbench
 
-This is the README for your extension "phpunit-test-workbench". After writing up a brief description, we recommend including the following sections.
+An extension to integrate PHPUnit with the native Test Explorer functionality within VS Code. Zero configuration required for common environment setups (i.e. where `php` is in your environment path, and PHPUnit is installed via Composer or included as a PHAR library).
 
 ## Features
-
-Describe specific features of your extension including screenshots of your extension in action. Image paths are relative to this README file.
-
-For example if there is an image subfolder under your extension project workspace:
-
-\!\[feature X\]\(images/feature-x.png\)
-
-> Tip: Many popular extensions utilize animations. This is an excellent way to show off your extension! We recommend short, focused animations that are easy to follow.
+* Integrates with standard VS Code Test Explorer
+* Organise and run your tests:
+  * By namespace
+  * By test suite (as defined in your `phpunit.xml` configuration file)
+  * Simple list of files and methods
+* Errors appear as a peak within the editor
+* History of test run results and execution times is maintained
+* Includes commands and hotkeys to allow quick running of test or test suites
 
 ## Requirements
+* __PHP:__ Version 7
+* __PHPUnit:__ Currently only tested on version 9
 
-If you have any requirements or dependencies, add a section describing those and how to install and configure them.
+>PHP binary and PHPUnit must be installed on the environment where the tests are being run. 
+>
+>If you are running in a Docker container, WSL or any other remote/virtual environment, this extension will work in conjunction with the [Remote Development](https://marketplace.visualstudio.com/items?itemName=ms-vscode-remote.vscode-remote-extensionpack) extension by Microsoft.
 
-## Extension Settings
+## Commands
+TBC
 
-Include if your extension adds any VS Code settings through the `contributes.configuration` extension point.
+## Configuration options
+|Option|Description|
+|------|-----------|
+|`log.level`|Control the level of information displayed in the output panel.|
+|`log.channel`|Send output either to an Output panel in the editor, or a log file.|
+|`log.file`|Path and filename to log output to (if log file is chosen as the logging channel).|
+|`php.binaryPath`|Path to the location of the PHP binary. If left blank, it will be assumed that `php` is available via the environment `$PATH` variable.|
+|`phpunit.binaryPath`|Path to the location of the PHPUnit binary (either `phpunit` or `phpunit.phar`). If left blank, the following locations will be checked: <li>Composer `vendor` directory</li><li>`phpunit.phar` in the root of the current workspace directory</li>If not found anywhere, it will be assumed that `phpunit.phar` is available via the environment `$PATH` variable.|
+|`phpunit.testOrganization`|Method used to organise and display tests in the Test Explorer:<li>__By file__: Show as a flat list of files, with test methods as children</li><li>__By namespace__: Hierarchical display, organized using the namespace structure (assumes compliance with [PSR-4](https://www.php-fig.org/psr/psr-4/))</li><li>__By test suite__: Uses the test suite structure defined in the `phpunit.xml` configuration file (if found).</li>|
+|`phpunit.locatorPatternTests`|The glob describing the location to look for test files. The default pattern is `{test,tests,Test,Tests}/**/*Test.php`.|
+|`phpunit.locatorPatternPhpUnitXml`|The glob describing the location to look for the `phpunit.xml` configuration file. The default pattern is `{test,tests,Test,Tests}/phpunit.xml`.|
+|`phpunit.targetDirectory`|Relative path from the workspace folder root to the directory where tests should be executed from (usually the `tests` folder). <br><br>__Note:__ If left blank, the workspace folder root will be used. Note that if a `phpunit.xml` file has been found with test suites defined, this setting is ignored.|
 
-For example:
+## Known issues
+* [Issue 1](https://github.com/chiefmyron/phpunit-test-workbench/issues/1) - Logging level settings change not applied until extension is reloaded
 
-This extension contributes the following settings:
-
-* `myExtension.enable`: Enable/disable this extension.
-* `myExtension.thing`: Set to `blah` to do something.
-
-## Known Issues
-
-Calling out known issues can help limit users opening duplicate issues against your extension.
-
-## Release Notes
-
-Users appreciate release notes as you update your extension.
-
-### 1.0.0
-
-Initial release of ...
-
-### 1.0.1
-
-Fixed issue #.
-
-### 1.1.0
-
-Added features X, Y, and Z.
-
----
-
-## Following extension guidelines
-
-Ensure that you've read through the extensions guidelines and follow the best practices for creating your extension.
-
-* [Extension Guidelines](https://code.visualstudio.com/api/references/extension-guidelines)
-
-## Working with Markdown
-
-You can author your README using Visual Studio Code. Here are some useful editor keyboard shortcuts:
-
-* Split the editor (`Cmd+\` on macOS or `Ctrl+\` on Windows and Linux).
-* Toggle preview (`Shift+Cmd+V` on macOS or `Shift+Ctrl+V` on Windows and Linux).
-* Press `Ctrl+Space` (Windows, Linux, macOS) to see a list of Markdown snippets.
-
-## For more information
-
-* [Visual Studio Code's Markdown Support](http://code.visualstudio.com/docs/languages/markdown)
-* [Markdown Syntax Reference](https://help.github.com/articles/markdown-basics/)
-
-**Enjoy!**
+## Release notes
+### v0.1 - 2022-09-29
+* Initial release

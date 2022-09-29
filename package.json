@@ -2,6 +2,9 @@
   "name": "phpunit-test-workbench",
   "displayName": "PHPUnit Test Workbench",
   "description": "",
+  "repository": {
+    "url": "https://github.com/chiefmyron/phpunit-test-workbench"
+  },
   "version": "0.0.1",
   "engines": {
     "vscode": "^1.71.0"

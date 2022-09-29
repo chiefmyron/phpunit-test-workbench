@@ -27,6 +27,10 @@ export class Logger {
         this.outputChannel.hide();
     }
 
+    public setLogLevel(level: LogLevel) {
+        this.level = level;
+    }
+
     public log(level: LogLevel, message: string) {
         if (level >= this.level) {
             this.outputChannel.appendLine(message);
