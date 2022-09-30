@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import { Configuration } from './config';
 
 export enum LogLevel {
     trace = 0,
@@ -10,13 +11,12 @@ export enum LogLevel {
 
 export class Logger {
     private outputChannel: vscode.OutputChannel;
-    private level: number;
+    private config: Configuration;
 
-    constructor() {
+    constructor(config: Configuration) {
         // Create channel and set logging level based on settings
-        const settings = vscode.workspace.getConfiguration('phpunit-test-workbench.log');
+        this.config = config;
         this.outputChannel = vscode.window.createOutputChannel('PHPUnit Test Workbench');
-        this.level = settings.get('level', LogLevel.info);
     }
 
     public showOutputChannel() {
@@ -27,22 +27,18 @@ export class Logger {
         this.outputChannel.hide();
     }
 
-    public setLogLevel(level: LogLevel) {
-        this.level = level;
-    }
-
     public log(level: LogLevel, message: string) {
-        if (level >= this.level) {
+        if (level >= this.config.get('log.level', LogLevel.info)) {
             this.outputChannel.appendLine(message);
         }
     }
 
     public trace(message: string) {
-        this.log(LogLevel.trace, '[TRACE]   ' + message);
+        this.log(LogLevel.trace, '[ TRACE ] ' + message);
     }
 
     public info(message: string) {
-        this.log(LogLevel.info, '[INFO]    ' + message);
+        this.log(LogLevel.info, '[ INFO  ] ' + message);
     }
 
     public warn(message: string) {
@@ -50,6 +46,6 @@ export class Logger {
     }
 
     public error(message: string) {
-        this.log(LogLevel.error, '[ERROR]   ' + message);
+        this.log(LogLevel.error, '[ ERROR ] ' + message);
     }
 }

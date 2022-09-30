@@ -1,44 +1,149 @@
-import { exec, ExecException } from 'child_process';
-import * as vscode from 'vscode';
-import { TestRunResultItem } from './TestRunResultItem';
-import { TestRunResultParser } from './TestRunResultParser';
+import { exec } from 'child_process';
 import * as util from 'util';
+import * as vscode from 'vscode';
+import { TestRunResultItem, TestRunResultStatus } from './TestRunResultItem';
+import { TestRunResultParser } from './TestRunResultParser';
+import { testDataMap } from '../parser/TestFileParser';
 import { Logger } from '../output';
+import { ItemType } from '../parser/TestItemDefinition';
+import { Configuration } from '../config';
 
 // Create promisified version of child process execution
 const cp_exec = util.promisify(exec);
 
 export class TestRunner {
+    private ctrl: vscode.TestController;
+    private config: Configuration;
     private logger: Logger;
     private phpBinaryPath: string = '';
     private phpUnitBinaryPath: string = '';
     private phpUnitConfigPath: string = '';
     private phpUnitTargetPath: string = '';
 
-    constructor(logger: Logger) {
+    constructor(ctrl: vscode.TestController, config: Configuration, logger: Logger) {
+        this.ctrl = ctrl;
+        this.config = config;
         this.logger = logger;
     }
 
-    public setPhpUnitTargetPath(target: string) {
-        this.phpUnitTargetPath = target;
+    public async run(request: vscode.TestRunRequest, token: vscode.CancellationToken) {
+        const run = this.ctrl.createTestRun(request);
+        const queue = new Map<string, vscode.TestItem>();
+    
+        // Get details of the first TestItem in the request (this should be the parent)
+        this.logger.showOutputChannel();
+        this.logger.info('Starting new test run...');
+        let parentTestItem: vscode.TestItem;
+        let testRunResults: TestRunResultItem[] = [];
+        if (request.include) {
+            // Run specific subset of tests
+            parentTestItem = request.include[0]!;
+            this.buildTestRunQueue(run, queue, parentTestItem);
+    
+            // Get the workspace folder and settings for the parent test
+            let parentTestItemDef = testDataMap.get(parentTestItem)!;
+            let workspaceFolder = vscode.workspace.getWorkspaceFolder(parentTestItemDef!.getWorkspaceFolderUri());
+            if (!workspaceFolder) {
+                this.logger.warn(`Unable to locate workspace folder for ${parentTestItemDef.getWorkspaceFolderUri()}`);
+                return;
+            }
+    
+            // Determine whether we are running for a folder, class or method within a class
+            let args = new Map<string, string>();
+            let target;
+            if (parentTestItemDef.getType() === ItemType.folder) {
+                target = parentTestItem.uri!.fsPath;
+            } else if (parentTestItemDef.getType() === ItemType.class) {
+                target = parentTestItem.uri!.fsPath;
+            } else if (parentTestItemDef.getType() === ItemType.method) {
+                args.set('--filter', '\'' + parentTestItemDef.getPhpUnitId().replace(/\\/g, "\\\\") + '\'');
+            }
+    
+            testRunResults = await this.runCommand(workspaceFolder, args, target);
+        } else {
+            // Run all top-level test items, and their children
+            let runRequired: boolean = false;
+            let currentWorkspaceFolder: vscode.WorkspaceFolder | undefined;
+            for (let [key, item] of this.ctrl.items) {
+                let itemDef = testDataMap.get(item);
+                let workspaceFolder = vscode.workspace.getWorkspaceFolder(itemDef!.getWorkspaceFolderUri());
+                if (currentWorkspaceFolder && workspaceFolder !== currentWorkspaceFolder) {
+                    // Execute any tests from the current workspace
+                    let results = await this.runCommand(currentWorkspaceFolder, new Map<string, string>());
+                    testRunResults = testRunResults.concat(results);
+                    runRequired = false;
+                } else {
+                    // Set this as the current workspace folder and start building up the test run queue
+                    currentWorkspaceFolder = workspaceFolder;
+                    this.buildTestRunQueue(run, queue, item);
+                    runRequired = true;
+                }
+            };
+    
+            // Clean up final run if required
+            if (runRequired === true && currentWorkspaceFolder) {
+                let results = await this.runCommand(currentWorkspaceFolder, new Map<string, string>());
+                testRunResults = testRunResults.concat(results);
+            }
+        }
+    
+        // Loop through test run results and set status and message for related TestItems
+        for (const result of testRunResults) {
+            let item = queue.get(result.getTestItemId());
+            if (!item) {
+                continue;
+            }
+    
+            // Set status, duration and messages
+            let message;
+            switch (result.getStatus()) {
+                case TestRunResultStatus.passed:
+                    this.logger.info('PASSED: ' + item.id);
+                    run.passed(item, result.getDuration());
+                    break;
+                case TestRunResultStatus.failed:
+                    // Format failure message
+                    message = new vscode.MarkdownString('**' + result.getMessage() + '**');
+                    this.logger.error('FAILED: ' + item.id);
+                    this.logger.error(' - Failure reason: ' + result.getMessage());
+                    if (result.getMessageDetail().length > 0) {
+                        message.appendMarkdown('\n' + result.getMessageDetail().replace("|n", "\n"));
+                        this.logger.error(' - Failure detail: ' + result.getMessageDetail().replace("|n", "\n"));
+                    }
+                    run.failed(item, new vscode.TestMessage(message), result.getDuration());
+                    break;
+                case TestRunResultStatus.ignored:
+                    // Format ignore message
+                    message = new vscode.MarkdownString('**' + result.getMessage() + '**');
+                    if (result.getMessageDetail().length > 0) {
+                        message.appendMarkdown('\n' + result.getMessageDetail().replace("|n", "\n"));
+                    }
+                    this.logger.error('IGNORED: ' + item.id);
+                    run.skipped(item);
+                    break;
+            }
+        }
+    
+        // Mark the test run as complete
+        this.logger.info('Test run completed!');
+        run.end();
     }
     
-    public async runCommand(workspaceFolder: vscode.WorkspaceFolder, args: Map<string, string>): Promise<TestRunResultItem[]> {
-        // Use provided settings for runner, if provided
-        const settings = vscode.workspace.getConfiguration('phpunit-test-workbench', workspaceFolder);
-        
+    public async runCommand(workspaceFolder: vscode.WorkspaceFolder, args: Map<string, string>, target?: string): Promise<TestRunResultItem[]> {
         // Set binary and config file locations
-        await this.initPhpBinaryPath(settings.get('php.binaryPath'));
-        await this.initPhpUnitBinaryPath(workspaceFolder, settings.get('phpunit.binaryPath'));
-        await this.initPhpUnitConfigPath(workspaceFolder, settings.get('phpunit.locatorPatternPhpUnitXml'));
-        await this.initPhpUnitTargetPath(workspaceFolder, settings.get('phpunit.targetDirectory'));
+        await this.initPhpBinaryPath(this.config.get('php.binaryPath', undefined, workspaceFolder));
+        await this.initPhpUnitBinaryPath(workspaceFolder, this.config.get('phpunit.binaryPath', undefined, workspaceFolder));
+        await this.initPhpUnitConfigPath(workspaceFolder, this.config.get('phpunit.locatorPatternPhpUnitXml', undefined, workspaceFolder));
 
         // Construct the basic command string for executing PHPUnit
+        this.logger.info(`Using PHP binary path: ${this.phpBinaryPath}`);
+        this.logger.info(`Using PHPUnit binary path: ${this.phpUnitBinaryPath}`);
         let command = this.phpBinaryPath + ' ' + this.phpUnitBinaryPath;
 
         // Add in command-line options
         args.set('--teamcity', '');
         if (this.phpUnitConfigPath.length > 0) {
+            this.logger.info(`Using PHPUnit configuration file: ${this.phpUnitConfigPath}`);
             args.set('-c', this.phpUnitConfigPath);
         }
         for (const [key, value] of args) {
@@ -48,8 +153,15 @@ export class TestRunner {
             }
         }
 
+        // Determine the target folder or file to use for test execution context
+        let targetPath = target;
+        if (!targetPath) {
+            targetPath = await this.guessPhpUnitTargetPath(workspaceFolder);
+        }
+
         // Finish with target folder or file
-        command = command + ' ' + this.phpUnitTargetPath;
+        command = command + ' ' + targetPath;
+        this.logger.info(`Using PHPUnit target directory: ${targetPath}`);
         this.logger.trace('Executing command to start test run: ' + command);
 
         // Attempt to run command
@@ -77,6 +189,16 @@ export class TestRunner {
         return results;
     }
 
+    private buildTestRunQueue(run: vscode.TestRun, queue: Map<string, vscode.TestItem>, item: vscode.TestItem) {
+        // Mark the test as running
+        run.started(item);
+        
+        // Add to the queue for later lookup by ID
+        queue.set(item.id, item);
+        item.children.forEach(child => this.buildTestRunQueue(run, queue, child));
+        return queue;
+    }
+
     private async initPhpBinaryPath(settingValue?: string) {
         // If a setting has been provided, it has first priority
         if (settingValue) {
@@ -84,7 +206,7 @@ export class TestRunner {
                 await vscode.workspace.fs.stat(vscode.Uri.parse(settingValue));
                 this.phpBinaryPath = settingValue;
             } catch {
-                this.logger.warn(`    Could not find PHP binary specified in settings: ${settingValue}`);
+                this.logger.warn(`Could not find PHP binary specified in settings: ${settingValue}`);
             }
         }
 
@@ -92,7 +214,6 @@ export class TestRunner {
             // Setting was either not provided or not successful - assume binary is available via $PATH
             this.phpBinaryPath = 'php';
         }
-        this.logger.info(`    Using PHP binary path: ${this.phpBinaryPath}`);
     }
 
     private async initPhpUnitBinaryPath(workspaceFolder: vscode.WorkspaceFolder, settingValue?: string) {
@@ -114,7 +235,7 @@ export class TestRunner {
                 this.phpUnitBinaryPath = pathOption.fsPath;
                 break;
             } catch {
-                this.logger.warn(`    Could not find PHPUnit binary specified in settings or in common fallback location: ${pathOption.fsPath}`);
+                this.logger.warn(`Could not find PHPUnit binary specified in settings or in common fallback location: ${pathOption.fsPath}`);
             }
         }
 
@@ -126,7 +247,6 @@ export class TestRunner {
                 this.phpUnitBinaryPath = 'phpunit';
             }
         }
-        this.logger.info(`    Using PHPUnit binary path: ${this.phpUnitBinaryPath}`);
     }
 
     private async initPhpUnitConfigPath(workspaceFolder: vscode.WorkspaceFolder, settingValue?: string) {
@@ -140,36 +260,26 @@ export class TestRunner {
 		await vscode.workspace.findFiles(phpUnitConfigPattern).then((files: vscode.Uri[]) => {
 			files.forEach((file: vscode.Uri) => {
 				this.phpUnitConfigPath = file.fsPath;
-                this.logger.info(`    Using PHPUnit configuration file: ${this.phpUnitConfigPath}`);
                 return;
 			});
 		});
-        this.logger.warn(`    No configuration file detected!`);
+        this.logger.warn(`No configuration file detected!`);
     }
 
-    private async initPhpUnitTargetPath(workspaceFolder: vscode.WorkspaceFolder, settingValue?: string) {
-        // Check if target path has already been set
-        if (this.phpUnitTargetPath.trim().length > 0) {
-            return;
-        }
-
+    private async guessPhpUnitTargetPath(workspaceFolder: vscode.WorkspaceFolder): Promise<string> {
         // If a setting has been provided, it has first priority
+        let settingValue = this.config.get('phpunit.targetDirectory', undefined, workspaceFolder);
         if (settingValue) {
             try {
                 let targetPathUri = workspaceFolder.uri.with({ path: workspaceFolder.uri.path + '/' + settingValue });
-                await vscode.workspace.fs.stat(targetPathUri).then(stat => {
-                    this.phpUnitTargetPath = targetPathUri.fsPath;
-                    this.logger.info(`    Using PHPUnit target directory: ${this.phpUnitTargetPath}`);
-                    return;
-                });
+                await vscode.workspace.fs.stat(targetPathUri);
+                return targetPathUri.fsPath;
             } catch {
-                this.logger.warn(`    Could not find PHPUnit target directory specified in settings: ${settingValue}`);
+                this.logger.warn(`Could not find PHPUnit target directory specified in settings: ${settingValue}`);
             }
         }
 
         // Fall back to use workspace folder as the default location
-        if (this.phpUnitTargetPath.trim().length <= 0) {
-            this.phpUnitTargetPath = workspaceFolder.uri.fsPath;
-        }
+        return this.phpUnitTargetPath = workspaceFolder.uri.fsPath;
     }
 }
