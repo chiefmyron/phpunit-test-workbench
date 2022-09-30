@@ -94,7 +94,7 @@ export class TestRunResultParser {
             if (m = line.match(patternSummaryOk)) {
                 let numTests = parseInt(m.at(1)!);
                 let numAssertions = parseInt(m.at(2)!);
-                this.logger.info(`Test run completed successfully! (${numTests} tests, ${numAssertions} assertions)`);
+                this.logger.info(`Test run completed: ${numTests} tests, ${numAssertions} assertions\n`);
                 break;
             }
 
@@ -103,14 +103,14 @@ export class TestRunResultParser {
                 let numTests = parseInt(m.at(1)!);
                 let numAssertions = parseInt(m.at(2)!);
                 let numFailures = parseInt(m.at(3)!);
-                this.logger.error(`Test run completed with failures! (${numTests} tests, ${numAssertions} assertions, ${numFailures} failures)`);
+                this.logger.error(`Test run completed: ${numTests} tests, ${numAssertions} assertions, ${numFailures} failures\n`);
                 break;
             }
 
             // Check if a fatal error occurred
             if (m = line.match(patternFatalError)) {
                 let errorMessage = m.at(1)!;
-                this.logger.error(`Fatal error occurred while running tests: ${errorMessage}`);
+                this.logger.error(`Fatal error occurred while running tests: ${errorMessage}\n`);
                 vscode.window.showErrorMessage('Fatal error occurred while executing PHPUnit test run', { detail: errorMessage, modal: false }, 'View output').then(item => {
                     if (item === 'View output') {
                         this.logger.showOutputChannel();

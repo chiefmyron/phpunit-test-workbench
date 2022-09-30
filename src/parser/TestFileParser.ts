@@ -3,6 +3,7 @@
 import Engine from 'php-parser';
 import { TextDecoder } from 'util';
 import * as vscode from 'vscode';
+import { Configuration } from '../config';
 import { Logger } from '../output';
 import { ItemType, TestItemDefinition } from './TestItemDefinition';
 
@@ -13,13 +14,14 @@ export function getTestItemDefinition(item: vscode.TestItem): TestItemDefinition
 }
 
 export class TestFileParser {
-    public ctrl: vscode.TestController;
-    private optTestOrganisationMode: string = 'file';
+    private ctrl: vscode.TestController;
+    private config: Configuration;
     private parser: Engine;
     private logger: Logger;
 
-    constructor(ctrl: vscode.TestController, logger: Logger) {
+    constructor(ctrl: vscode.TestController, config: Configuration, logger: Logger) {
         this.ctrl = ctrl;
+        this.config = config;
         this.logger = logger;
 
         this.logger.trace('Creating new TestFileParser instance...');
@@ -45,12 +47,12 @@ export class TestFileParser {
         this.logger.trace('TestFileParser instance created!');
     }
 
-    public setTestOrganisationMode(mode: string) {
-        this.optTestOrganisationMode = mode;
-    }
-
     public clearTestControllerItems() {
         this.ctrl.items.forEach(item => this.ctrl.items.delete(item.id));
+    }
+
+    public removeTestFile(testItemId: string) {
+        this.ctrl.items.delete(testItemId);
     }
 
     public async parseTestFileContents(workspaceFolderUri: vscode.Uri, testFileUri: vscode.Uri, testFileContents?: string) {
@@ -62,13 +64,12 @@ export class TestFileParser {
         // Check if we need to load file contents from disk
         this.logger.trace(`Parsing contents of file for test cases: ${testFileUri.toString()}`);
         if (!testFileContents) {
-            this.logger.trace('    Loading test file contents from disk...');
+            this.logger.trace('Loading test file contents from disk...');
             try {
                 const rawContent = await vscode.workspace.fs.readFile(testFileUri);
                 testFileContents = new TextDecoder().decode(rawContent);
-                this.logger.trace('    Loaded!');
             } catch (e) {
-                this.logger.warn('    Unable to load test file content! Error message: ' + e);
+                this.logger.warn('Unable to load test file content! Error message: ' + e);
                 return;
             }
         }
@@ -78,21 +79,21 @@ export class TestFileParser {
         try {
             tree = this.parser.parseCode(testFileContents);
         } catch (e) {
-            this.logger.warn('    An error occurred while parsing the test file! Error message: ' + e);
+            this.logger.warn('An error occurred while parsing the test file! Error message: ' + e);
             return;
         }
     
         // Get the namespace for the test file
         const namespaceNode = this.findNamespaceNode(tree.children);
         if (!namespaceNode) {
-           this.logger.info(    `Unable to find namespace definition in test file: ${testFileUri.toString()}`);
+           this.logger.info(`Unable to find namespace definition in test file: ${testFileUri.toString()}`);
         }
     
         // Get classes for the test file
         const namespaceChildNodes = namespaceNode ? namespaceNode.children : tree;
         const classNode = this.findClassNode(namespaceChildNodes);
         if (!classNode) {
-            this.logger.warn(    `Unable to find class definition in test file: ${testFileUri.toString()}`);
+            this.logger.warn(`Unable to find class definition in test file: ${testFileUri.toString()}`);
             return;
         }
     
@@ -101,11 +102,11 @@ export class TestFileParser {
     
         // Check if the TestItem for the test file has already been created
         let classTestItem: any;
-        if (this.optTestOrganisationMode === 'namespace') {
+        if (this.config.get('phpunit.testOrganization', 'file') === 'namespace') {
             // Verify or create hierarchy of namespace TestItems as parent nodes before creating the class test item
             let namespaceTestItem = this.createNamespaceTestItems(namespaceNode, this.ctrl, workspaceFolderUri, testFileUri);
             classTestItem = this.createClassTestItem(classNode, this.ctrl, workspaceFolderUri, testFileUri, namespaceTestItem);
-        } else if (this.optTestOrganisationMode === 'testsuite') {
+        } else if (this.config.get('phpunit.testOrganization', 'file') === 'testsuite') {
     
         } else {
             // Create class test item as a root node
@@ -124,7 +125,7 @@ export class TestFileParser {
                     new vscode.Position(methodNode.loc.end.line, methodNode.loc.end.column)
                 );
             }
-            this.logger.trace('    Created new TestItem for method: ' + methodId);
+            this.logger.trace('- Created new TestItem for method: ' + methodId);
     
             // Add as a child of the class TestItem
             classTestItem!.children.add(methodTestItem);
@@ -222,7 +223,7 @@ export class TestFileParser {
             // Create new TestItem for namespace component
             namespaceTestItem = ctrl.createTestItem(namespaceId, namespaceLabel!, namespaceUri);
             namespaceTestItem.canResolveChildren = true;
-            this.logger.trace('    Created new TestItem for namespace component: ' + namespaceId);
+            this.logger.trace('- Created new TestItem for namespace component: ' + namespaceId);
     
             // Add new namespace TestItem as a child in the hierarchy
             let namespacePhpUnitId = namespaceLabel;
@@ -269,7 +270,7 @@ export class TestFileParser {
                 new vscode.Position(classNode.loc.end.line, classNode.loc.end.column)
             );
             classTestItem.canResolveChildren = true;
-            this.logger.trace('    Created new TestItem for class: ' + classId);
+            this.logger.trace('- Created new TestItem for class: ' + classId);
         
             // Add new class TestItem as a child in the hierarchy
             let classPhpUnitId = classLabel;
