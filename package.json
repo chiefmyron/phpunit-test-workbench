@@ -19,8 +19,20 @@
   "contributes": {
     "commands": [
       {
-        "command": "phpunit-test-workbench.helloWorld",
-        "title": "Hello World"
+        "command": "phpunit-test-workbench.runMethod",
+        "title": "PHPUnit: Run test method"
+      },
+      {
+        "command": "phpunit-test-workbench.runClass",
+        "title": "PHPUnit: Run test class"
+      },
+      {
+        "command": "phpunit-test-workbench.runSuite",
+        "title": "PHPUnit: Run test suite"
+      },
+      {
+        "command": "phpunit-test-workbench.runAll",
+        "title": "PHPUnit: Run all tests"
       }
     ],
     "configuration": {

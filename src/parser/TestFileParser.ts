@@ -55,6 +55,33 @@ export class TestFileParser {
         this.ctrl.items.delete(testItemId);
     }
 
+    public async discoverTestFilesInWorkspace() {
+        // Handle the case of no open folders
+        if (!vscode.workspace.workspaceFolders) {
+            return [];
+        }
+    
+        return Promise.all(
+            vscode.workspace.workspaceFolders.map(async workspaceFolder => {
+                const patternString = this.config.get('locatorPatternTests', '{test,tests,Test,Tests}/**/*Test.php', workspaceFolder);
+                const pattern = new vscode.RelativePattern(workspaceFolder, patternString);
+                const watcher = vscode.workspace.createFileSystemWatcher(pattern);
+    
+                // Set file related event handlers
+                watcher.onDidCreate(fileUri => this.parseTestFileContents(workspaceFolder.uri, fileUri));
+                watcher.onDidChange(fileUri => this.parseTestFileContents(workspaceFolder.uri, fileUri));
+                watcher.onDidDelete(fileUri => this.removeTestFile(fileUri.toString()));
+    
+                // Find initial set of files for workspace
+                for (const fileUri of await vscode.workspace.findFiles(pattern)) {
+                    await this.parseTestFileContents(workspaceFolder.uri, fileUri);
+                }
+    
+                return watcher;
+            })
+        );
+    }
+
     public async parseTestFileContents(workspaceFolderUri: vscode.Uri, testFileUri: vscode.Uri, testFileContents?: string) {
         // Only need to parse PHP files
         if (testFileUri.scheme !== 'file' || !testFileUri.path.endsWith('.php')) {

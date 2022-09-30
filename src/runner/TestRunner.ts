@@ -18,7 +18,6 @@ export class TestRunner {
     private phpBinaryPath: string = '';
     private phpUnitBinaryPath: string = '';
     private phpUnitConfigPath: string = '';
-    private phpUnitTargetPath: string = '';
 
     constructor(ctrl: vscode.TestController, config: Configuration, logger: Logger) {
         this.ctrl = ctrl;
@@ -280,6 +279,6 @@ export class TestRunner {
         }
 
         // Fall back to use workspace folder as the default location
-        return this.phpUnitTargetPath = workspaceFolder.uri.fsPath;
+        return workspaceFolder.uri.fsPath;
     }
 }
