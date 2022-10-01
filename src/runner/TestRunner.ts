@@ -3,24 +3,26 @@ import * as util from 'util';
 import * as vscode from 'vscode';
 import { TestRunResultItem, TestRunResultStatus } from './TestRunResultItem';
 import { TestRunResultParser } from './TestRunResultParser';
-import { testDataMap } from '../parser/TestFileParser';
 import { Logger } from '../output';
 import { ItemType } from '../parser/TestItemDefinition';
 import { Configuration } from '../config';
+import { TestItemMap } from '../parser/TestItemMap';
 
 // Create promisified version of child process execution
 const cp_exec = util.promisify(exec);
 
 export class TestRunner {
     private ctrl: vscode.TestController;
+    private itemMap: TestItemMap;
     private config: Configuration;
     private logger: Logger;
     private phpBinaryPath: string = '';
     private phpUnitBinaryPath: string = '';
     private phpUnitConfigPath: string = '';
 
-    constructor(ctrl: vscode.TestController, config: Configuration, logger: Logger) {
+    constructor(ctrl: vscode.TestController, itemMap: TestItemMap, config: Configuration, logger: Logger) {
         this.ctrl = ctrl;
+        this.itemMap = itemMap;
         this.config = config;
         this.logger = logger;
     }
@@ -40,7 +42,7 @@ export class TestRunner {
             this.buildTestRunQueue(run, queue, parentTestItem);
     
             // Get the workspace folder and settings for the parent test
-            let parentTestItemDef = testDataMap.get(parentTestItem)!;
+            let parentTestItemDef = this.itemMap.getTestItemDef(parentTestItem)!;
             let workspaceFolder = vscode.workspace.getWorkspaceFolder(parentTestItemDef!.getWorkspaceFolderUri());
             if (!workspaceFolder) {
                 this.logger.warn(`Unable to locate workspace folder for ${parentTestItemDef.getWorkspaceFolderUri()}`);
@@ -64,7 +66,7 @@ export class TestRunner {
             let runRequired: boolean = false;
             let currentWorkspaceFolder: vscode.WorkspaceFolder | undefined;
             for (let [key, item] of this.ctrl.items) {
-                let itemDef = testDataMap.get(item);
+                let itemDef = this.itemMap.getTestItemDef(item);
                 let workspaceFolder = vscode.workspace.getWorkspaceFolder(itemDef!.getWorkspaceFolderUri());
                 if (currentWorkspaceFolder && workspaceFolder !== currentWorkspaceFolder) {
                     // Execute any tests from the current workspace

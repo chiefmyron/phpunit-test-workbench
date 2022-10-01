@@ -4,6 +4,7 @@ import * as vscode from 'vscode';
 import { Configuration } from './config';
 import { Logger } from './output';
 import { TestFileParser } from './parser/TestFileParser';
+import { TestItemMap } from './parser/TestItemMap';
 import { CommandHandler } from './runner/CommandHandler';
 import { TestRunner } from './runner/TestRunner';
 
@@ -26,17 +27,21 @@ export function activate(context: vscode.ExtensionContext) {
 	const ctrl = vscode.tests.createTestController('phpunitTestController', 'PHPUnit Test Workbench');
 	context.subscriptions.push(ctrl);
 
+	// Create map of test items
+	logger.trace('Creating map of test item data');
+	const itemMap = new TestItemMap();
+
 	// Create test file parser
 	logger.trace(`Creating test file parser (test organization method: ${settingTestOrgMethod})`);
-	const parser = new TestFileParser(ctrl, config, logger);
+	const parser = new TestFileParser(ctrl, itemMap, config, logger);
 
 	// Create test runner
 	logger.trace(`Creating test runner`);
-	const runner = new TestRunner(ctrl, config, logger);
+	const runner = new TestRunner(ctrl, itemMap, config, logger);
 
 	// Create command handler
 	logger.trace(`Creating command handler`);
-	const commandHandler = new CommandHandler(ctrl, parser, runner, config, logger);
+	const commandHandler = new CommandHandler(ctrl, parser, itemMap, runner, config, logger);
 
 	// Refresh handler
 	ctrl.refreshHandler = async () => {

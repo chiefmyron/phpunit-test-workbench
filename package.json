@@ -123,6 +123,18 @@
           "default": ""
         }
       }
+    },
+    "menus": {
+      "commandPalette": [
+        {
+          "command": "phpunit-test-workbench.runMethod",
+          "when": "editorLangId == php"
+        },
+        {
+          "command": "phpunit-test-workbench.runClass",
+          "when": "editorLangId == php"
+        }
+      ]
     }
   },
   "scripts": {
