@@ -6,21 +6,23 @@ import * as vscode from 'vscode';
 import { Configuration } from '../config';
 import { Logger } from '../output';
 import { ItemType, TestItemDefinition } from './TestItemDefinition';
-
-export const testDataMap = new WeakMap<vscode.TestItem, TestItemDefinition>();
-
-export function getTestItemDefinition(item: vscode.TestItem): TestItemDefinition | undefined {
-    return testDataMap.get(item);
-}
+import { TestItemMap } from './TestItemMap';
 
 export class TestFileParser {
     private ctrl: vscode.TestController;
+    private itemMap: TestItemMap;
     private config: Configuration;
     private parser: Engine;
     private logger: Logger;
 
-    constructor(ctrl: vscode.TestController, config: Configuration, logger: Logger) {
+    constructor(
+        ctrl: vscode.TestController,
+        itemMap: TestItemMap,
+        config: Configuration,
+        logger: Logger
+    ) {
         this.ctrl = ctrl;
+        this.itemMap = itemMap;
         this.config = config;
         this.logger = logger;
 
@@ -49,10 +51,39 @@ export class TestFileParser {
 
     public clearTestControllerItems() {
         this.ctrl.items.forEach(item => this.ctrl.items.delete(item.id));
+        this.itemMap.clear();
     }
 
     public removeTestFile(testItemId: string) {
         this.ctrl.items.delete(testItemId);
+        this.itemMap.delete(testItemId);
+    }
+
+    public async discoverTestFilesInWorkspace() {
+        // Handle the case of no open folders
+        if (!vscode.workspace.workspaceFolders) {
+            return [];
+        }
+    
+        return Promise.all(
+            vscode.workspace.workspaceFolders.map(async workspaceFolder => {
+                const patternString = this.config.get('phpunit.locatorPatternTests', '{test,tests,Test,Tests}/**/*Test.php', workspaceFolder);
+                const pattern = new vscode.RelativePattern(workspaceFolder, patternString);
+                const watcher = vscode.workspace.createFileSystemWatcher(pattern);
+    
+                // Set file related event handlers
+                watcher.onDidCreate(fileUri => this.parseTestFileContents(workspaceFolder.uri, fileUri));
+                watcher.onDidChange(fileUri => this.parseTestFileContents(workspaceFolder.uri, fileUri));
+                watcher.onDidDelete(fileUri => this.removeTestFile(fileUri.toString()));
+    
+                // Find initial set of files for workspace
+                for (const fileUri of await vscode.workspace.findFiles(pattern)) {
+                    await this.parseTestFileContents(workspaceFolder.uri, fileUri);
+                }
+    
+                return watcher;
+            })
+        );
     }
 
     public async parseTestFileContents(workspaceFolderUri: vscode.Uri, testFileUri: vscode.Uri, testFileContents?: string) {
@@ -97,45 +128,23 @@ export class TestFileParser {
             return;
         }
     
-        // Get test methods for class
-        const methodNodes = this.findTestMethodNodes(classNode.body);
-    
         // Check if the TestItem for the test file has already been created
         let classTestItem: any;
         if (this.config.get('phpunit.testOrganization', 'file') === 'namespace') {
             // Verify or create hierarchy of namespace TestItems as parent nodes before creating the class test item
             let namespaceTestItem = this.createNamespaceTestItems(namespaceNode, this.ctrl, workspaceFolderUri, testFileUri);
-            classTestItem = this.createClassTestItem(classNode, this.ctrl, workspaceFolderUri, testFileUri, namespaceTestItem);
+            classTestItem = this.createClassTestItem(classNode, workspaceFolderUri, testFileUri, namespaceTestItem);
         } else if (this.config.get('phpunit.testOrganization', 'file') === 'testsuite') {
     
         } else {
             // Create class test item as a root node
-            classTestItem = this.createClassTestItem(classNode, this.ctrl, workspaceFolderUri, testFileUri);
+            classTestItem = this.createClassTestItem(classNode, workspaceFolderUri, testFileUri);
         }
-    
-        // For each method, create child TestItem
+
+        // Create TestItems for test methods within the class
+        const methodNodes = this.findTestMethodNodes(classNode.body);
         methodNodes.map((methodNode: any) => {
-            // Create TestItem for method
-            const methodName = methodNode.name.name;
-            const methodId = `${classTestItem!.id}::${methodName}`;
-            const methodTestItem = this.ctrl.createTestItem(methodId, methodName, testFileUri);
-            if (methodNode.loc) {
-                methodTestItem.range = new vscode.Range(
-                    new vscode.Position(methodNode.loc.start.line, methodNode.loc.start.column),
-                    new vscode.Position(methodNode.loc.end.line, methodNode.loc.end.column)
-                );
-            }
-            this.logger.trace('- Created new TestItem for method: ' + methodId);
-    
-            // Add as a child of the class TestItem
-            classTestItem!.children.add(methodTestItem);
-
-            // Build PHPUnit Id as the fully qualified class name, plus method name
-            let methodPhpUnitId = testDataMap.get(classTestItem)!.getPhpUnitId();
-            methodPhpUnitId = methodPhpUnitId + '::' + methodName;
-
-            const methodTestItemDef = new TestItemDefinition(ItemType.method, workspaceFolderUri, methodPhpUnitId);
-            testDataMap.set(methodTestItem, methodTestItemDef);
+            this.createMethodTestItem(methodNode, workspaceFolderUri, testFileUri, classTestItem);
         });
         this.logger.trace(`Finished parsing of test file: ${testFileUri.toString()}`);
     }
@@ -195,10 +204,10 @@ export class TestFileParser {
         }
         const basePath = basePathParts.join('/');
     
-        return this.traverseNamespaceHierarchy(ctrl, workspaceFolderUri, basePath, namespaceParts);
+        return this.traverseNamespaceHierarchy(workspaceFolderUri, basePath, namespaceParts);
     }
     
-    private traverseNamespaceHierarchy(ctrl: vscode.TestController, workspaceFolderUri: vscode.Uri, basePath: string, namespaceParts: string[], parentTestItem?: vscode.TestItem): vscode.TestItem {
+    private traverseNamespaceHierarchy(workspaceFolderUri: vscode.Uri, basePath: string, namespaceParts: string[], parentTestItem?: vscode.TestItem): vscode.TestItem {
         // Construct identifier for the namespace
         let namespaceLabel = namespaceParts.shift();
         let namespacePath = '';
@@ -215,41 +224,43 @@ export class TestFileParser {
         if (parentTestItem) {
             namespaceTestItem = parentTestItem.children.get(namespaceId);
         } else {
-            namespaceTestItem = ctrl.items.get(namespaceId);
+            namespaceTestItem = this.ctrl.items.get(namespaceId);
         }
     
         // If the namespace does not already exist, create it now
         if (!namespaceTestItem) {
             // Create new TestItem for namespace component
-            namespaceTestItem = ctrl.createTestItem(namespaceId, namespaceLabel!, namespaceUri);
+            namespaceTestItem = this.ctrl.createTestItem(namespaceId, namespaceLabel!, namespaceUri);
             namespaceTestItem.canResolveChildren = true;
             this.logger.trace('- Created new TestItem for namespace component: ' + namespaceId);
     
             // Add new namespace TestItem as a child in the hierarchy
-            let namespacePhpUnitId = namespaceLabel;
+            let namespaceStr = namespaceLabel;
             if (parentTestItem) {
                 parentTestItem.children.add(namespaceTestItem);
 
                 // Rebuild namespace from label and parent test item, and use as the PHPUnit ID for the item
-                namespacePhpUnitId = testDataMap.get(parentTestItem)!.getPhpUnitId();
-                namespacePhpUnitId = namespacePhpUnitId + '\\' + namespaceLabel;
+                namespaceStr = this.itemMap.getTestItemDef(parentTestItem)!.getNamespace();
+                namespaceStr = namespaceStr + '\\' + namespaceLabel;
             } else {
-                ctrl.items.add(namespaceTestItem);
+                this.ctrl.items.add(namespaceTestItem);
             }
-            const namespaceTestItemDef = new TestItemDefinition(ItemType.folder, workspaceFolderUri, namespacePhpUnitId);
-            testDataMap.set(namespaceTestItem, namespaceTestItemDef);
+
+            // Add to TestItem map
+            const namespaceTestItemDef = new TestItemDefinition(ItemType.folder, workspaceFolderUri, { namespace: namespaceStr });
+            this.itemMap.set(namespaceTestItem, namespaceTestItemDef);
         }
     
         // If there are still additional namespace components, continue recursion
         if (namespaceParts.length > 0) {
-            return this.traverseNamespaceHierarchy(ctrl, workspaceFolderUri, basePath, namespaceParts, namespaceTestItem);
+            return this.traverseNamespaceHierarchy(workspaceFolderUri, basePath, namespaceParts, namespaceTestItem);
         }
     
         // No additional components - this is the end of the recursion
         return namespaceTestItem;
     }
     
-    private createClassTestItem(classNode: any, ctrl: vscode.TestController, workspaceFolderUri: vscode.Uri, testFileUri: vscode.Uri, parentTestItem?: vscode.TestItem): vscode.TestItem {
+    private createClassTestItem(classNode: any, workspaceFolderUri: vscode.Uri, testFileUri: vscode.Uri, parentTestItem?: vscode.TestItem): vscode.TestItem {
         let classId = testFileUri.toString();
         let classLabel = classNode.name.name;
         
@@ -258,35 +269,62 @@ export class TestFileParser {
         if (parentTestItem) {
             classTestItem = parentTestItem.children.get(classId);
         } else {
-            classTestItem = ctrl.items.get(classId);
+            classTestItem = this.ctrl.items.get(classId);
         }
     
         // If the class does not already exist, create it now
         if (!classTestItem) {
-            // Create nes TestItem for class
-            classTestItem = ctrl.createTestItem(classId, classLabel, testFileUri);
-            classTestItem.range = new vscode.Range(
-                new vscode.Position(classNode.loc.start.line, classNode.loc.start.column),
-                new vscode.Position(classNode.loc.end.line, classNode.loc.end.column)
-            );
+            // Create new TestItem for class
+            classTestItem = this.ctrl.createTestItem(classId, classLabel, testFileUri);
+            if (classNode.loc) {
+                classTestItem.range = new vscode.Range(
+                    new vscode.Position(classNode.loc.start.line, classNode.loc.start.column),
+                    new vscode.Position(classNode.loc.end.line, classNode.loc.end.column)
+                );
+            }
             classTestItem.canResolveChildren = true;
             this.logger.trace('- Created new TestItem for class: ' + classId);
         
             // Add new class TestItem as a child in the hierarchy
-            let classPhpUnitId = classLabel;
+            let namespace = undefined;
             if (parentTestItem) {
                 parentTestItem.children.add(classTestItem);
 
                 // Build fully-qualified class name from label and parent namespace test item, and use as the PHPUnit ID for the item
-                classPhpUnitId = testDataMap.get(parentTestItem)!.getPhpUnitId();
-                classPhpUnitId = classPhpUnitId + '\\' + classLabel;
+                namespace = this.itemMap.getTestItemDef(parentTestItem)!.getNamespace();
             } else {
-                ctrl.items.add(classTestItem);
+                this.ctrl.items.add(classTestItem);
             }
-            const classTestItemDef = new TestItemDefinition(ItemType.class, workspaceFolderUri, classPhpUnitId);
-            testDataMap.set(classTestItem, classTestItemDef);
+
+            // Add to TestItem map
+            const classTestItemDef = new TestItemDefinition(ItemType.class, workspaceFolderUri, { namespace: namespace, classname: classLabel });
+            this.itemMap.set(classTestItem, classTestItemDef);
         }
         
         return classTestItem;
+    }
+
+    private createMethodTestItem(methodNode: any, workspaceFolderUri: vscode.Uri, testFileUri: vscode.Uri, classTestItem: vscode.TestItem): vscode.TestItem {
+        // Create TestItem for method
+        const methodName = methodNode.name.name;
+        const methodId = `${classTestItem!.id}::${methodName}`;
+        const methodTestItem = this.ctrl.createTestItem(methodId, methodName, testFileUri);
+        if (methodNode.loc) {
+            methodTestItem.range = new vscode.Range(
+                new vscode.Position(methodNode.loc.start.line, methodNode.loc.start.column),
+                new vscode.Position(methodNode.loc.end.line, methodNode.loc.end.column)
+            );
+        }
+        this.logger.trace('- Created new TestItem for method: ' + methodId);
+
+        // Add as a child of the class TestItem
+        classTestItem!.children.add(methodTestItem);
+
+        // Add to TestItem map
+        let parentTestItemDef = this.itemMap.getTestItemDef(classTestItem)!;
+        const methodTestItemDef = new TestItemDefinition(ItemType.method, workspaceFolderUri, { namespace: parentTestItemDef.getNamespace(), classname: parentTestItemDef.getClassname(), method: methodName });
+        this.itemMap.set(methodTestItem, methodTestItemDef);
+
+        return methodTestItem;
     }
 }
