@@ -105,10 +105,13 @@ async function updateConfigurationSettings(config: Configuration, parser: TestFi
 }
 
 async function parseOpenDocument(parser: TestFileParser, document: vscode.TextDocument, config: Configuration) {
-	let workspaceUri = vscode.workspace.getWorkspaceFolder(document.uri)!.uri;
-	let pattern = new vscode.RelativePattern(workspaceUri, config.get('phpunit.locatorPatternTests', '{test,tests,Test,Tests}/**/*Test.php', workspaceUri ));
+	let workspaceFolder = vscode.workspace.getWorkspaceFolder(document.uri);
+	if (!workspaceFolder) {
+		return;
+	}
+	let pattern = new vscode.RelativePattern(workspaceFolder, config.get('phpunit.locatorPatternTests', '{test,tests,Test,Tests}/**/*Test.php', workspaceFolder.uri ));
 	if (vscode.languages.match({ pattern: pattern }, document) !== 0) {
-		parser.parseTestFileContents(workspaceUri!, document.uri, document.getText());
+		parser.parseTestFileContents(workspaceFolder.uri, document.uri, document.getText());
 	}
 }
 
