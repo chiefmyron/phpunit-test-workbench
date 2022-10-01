@@ -45,7 +45,7 @@ export function activate(context: vscode.ExtensionContext) {
 
 	// Refresh handler
 	ctrl.refreshHandler = async () => {
-		await refreshTestFilesInWorkspace(parser);
+		await parser.refreshTestFilesInWorkspace();
 	};
 
 	// Resolve handler
@@ -79,14 +79,14 @@ export function activate(context: vscode.ExtensionContext) {
 	// Register event handlers
 	context.subscriptions.push(
 		vscode.workspace.onDidChangeConfiguration(e => updateConfigurationSettings(config, parser)),
-		vscode.workspace.onDidOpenTextDocument(doc => parseOpenDocument(parser, doc, config)),
-		vscode.workspace.onDidChangeTextDocument(e => parseOpenDocument(parser, e.document, config))
+		vscode.workspace.onDidOpenTextDocument(doc => parser.parseOpenDocument(doc, config)),
+		vscode.workspace.onDidChangeTextDocument(e => parser.parseOpenDocument(e.document, config))
 	);
 
 	// Run initial test discovery on files already present in the workspace
 	logger.trace('Run initial test discovery against files already open in the workspace');
 	for (const doc of vscode.workspace.textDocuments) {
-		parseOpenDocument(parser, doc, config);
+		parser.parseOpenDocument(doc, config);
 	}
 
 	logger.trace('Extension "phpunit-test-workbench" activated!');
@@ -97,26 +97,8 @@ export function activate(context: vscode.ExtensionContext) {
 export function deactivate() {}
 
 async function updateConfigurationSettings(config: Configuration, parser: TestFileParser) {
-	// Refresh configuration object with new settings
+	// Refresh configuration object with new settings and refresh files found in the workspace
+	// (setting changes may affect the way TestItem objects are discovered and/or organized)
 	config.refresh();
-
-	// Refresh test files found in the workspace (in case setting affects the way files are found / organized)
-	refreshTestFilesInWorkspace(parser);
-}
-
-async function parseOpenDocument(parser: TestFileParser, document: vscode.TextDocument, config: Configuration) {
-	let workspaceFolder = vscode.workspace.getWorkspaceFolder(document.uri);
-	if (!workspaceFolder) {
-		return;
-	}
-	let pattern = new vscode.RelativePattern(workspaceFolder, config.get('phpunit.locatorPatternTests', '{test,tests,Test,Tests}/**/*Test.php', workspaceFolder.uri ));
-	if (vscode.languages.match({ pattern: pattern }, document) !== 0) {
-		parser.parseTestFileContents(workspaceFolder.uri, document.uri, document.getText());
-	}
-}
-
-async function refreshTestFilesInWorkspace(parser: TestFileParser) {
-	// Clear any existing TestItems and re-parse files in the workspace
-	parser.clearTestControllerItems();
-	return parser.discoverTestFilesInWorkspace();
+	parser.refreshTestFilesInWorkspace();
 }

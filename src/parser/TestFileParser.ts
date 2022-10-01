@@ -49,6 +49,10 @@ export class TestFileParser {
         this.logger.trace('TestFileParser instance created!');
     }
 
+    private getTestLocatorPattern(workspaceFolder?: vscode.WorkspaceFolder) {
+        return this.config.get('phpunit.locatorPatternTests', '{test,tests,Test,Tests}/**/*Test.php', workspaceFolder);
+    }
+
     public clearTestControllerItems() {
         this.ctrl.items.forEach(item => this.ctrl.items.delete(item.id));
         this.itemMap.clear();
@@ -59,6 +63,11 @@ export class TestFileParser {
         this.itemMap.delete(testItemId);
     }
 
+    public async refreshTestFilesInWorkspace() {
+        this.clearTestControllerItems();
+        return this.discoverTestFilesInWorkspace();
+    }
+
     public async discoverTestFilesInWorkspace() {
         // Handle the case of no open folders
         if (!vscode.workspace.workspaceFolders) {
@@ -67,7 +76,7 @@ export class TestFileParser {
     
         return Promise.all(
             vscode.workspace.workspaceFolders.map(async workspaceFolder => {
-                const patternString = this.config.get('phpunit.locatorPatternTests', '{test,tests,Test,Tests}/**/*Test.php', workspaceFolder);
+                const patternString = this.getTestLocatorPattern(workspaceFolder);
                 const pattern = new vscode.RelativePattern(workspaceFolder, patternString);
                 const watcher = vscode.workspace.createFileSystemWatcher(pattern);
     
@@ -84,6 +93,17 @@ export class TestFileParser {
                 return watcher;
             })
         );
+    }
+
+    public async parseOpenDocument(document: vscode.TextDocument, config: Configuration) {
+        let workspaceFolder = vscode.workspace.getWorkspaceFolder(document.uri);
+        if (!workspaceFolder) {
+            return;
+        }
+        let pattern = new vscode.RelativePattern(workspaceFolder, this.getTestLocatorPattern(workspaceFolder));
+        if (vscode.languages.match({ pattern: pattern }, document) !== 0) {
+            this.parseTestFileContents(workspaceFolder.uri, document.uri, document.getText());
+        }
     }
 
     public async parseTestFileContents(workspaceFolderUri: vscode.Uri, testFileUri: vscode.Uri, testFileContents?: string) {

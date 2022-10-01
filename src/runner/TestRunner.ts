@@ -99,13 +99,13 @@ export class TestRunner {
             let message;
             switch (result.getStatus()) {
                 case TestRunResultStatus.passed:
-                    this.logger.info('PASSED: ' + item.id);
+                    this.logger.info('✅ PASSED: ' + item.id);
                     run.passed(item, result.getDuration());
                     break;
                 case TestRunResultStatus.failed:
                     // Format failure message
                     message = new vscode.MarkdownString('**' + result.getMessage() + '**');
-                    this.logger.error('FAILED: ' + item.id);
+                    this.logger.error('❌ FAILED: ' + item.id);
                     this.logger.error(' - Failure reason: ' + result.getMessage());
                     if (result.getMessageDetail().length > 0) {
                         message.appendMarkdown('\n' + result.getMessageDetail().replace("|n", "\n"));
@@ -119,7 +119,7 @@ export class TestRunner {
                     if (result.getMessageDetail().length > 0) {
                         message.appendMarkdown('\n' + result.getMessageDetail().replace("|n", "\n"));
                     }
-                    this.logger.error('IGNORED: ' + item.id);
+                    this.logger.error('➖ IGNORED: ' + item.id);
                     run.skipped(item);
                     break;
             }
