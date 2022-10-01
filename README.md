@@ -21,7 +21,12 @@ An extension to integrate PHPUnit with the native Test Explorer functionality wi
 >If you are running in a Docker container, WSL or any other remote/virtual environment, this extension will work in conjunction with the [Remote Development](https://marketplace.visualstudio.com/items?itemName=ms-vscode-remote.vscode-remote-extensionpack) extension by Microsoft.
 
 ## Commands
-TBC
+|Command|Description|
+|-------|-----------|
+|PHPUnit: Run test method|If the cursor is located within a test method, execute only that test method.|
+|PHPUnit: Run test class|If the active editor is for a test class, execute all test methods within the class.|
+|PHPUnit: Run test suite|TBC|
+|PHPUnit: Run all tests|Run all tests identified in the Test Explorer|
 
 ## Configuration options
 |Option|Description|
