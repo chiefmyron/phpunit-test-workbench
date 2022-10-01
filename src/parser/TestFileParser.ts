@@ -67,7 +67,7 @@ export class TestFileParser {
     
         return Promise.all(
             vscode.workspace.workspaceFolders.map(async workspaceFolder => {
-                const patternString = this.config.get('locatorPatternTests', '{test,tests,Test,Tests}/**/*Test.php', workspaceFolder);
+                const patternString = this.config.get('phpunit.locatorPatternTests', '{test,tests,Test,Tests}/**/*Test.php', workspaceFolder);
                 const pattern = new vscode.RelativePattern(workspaceFolder, patternString);
                 const watcher = vscode.workspace.createFileSystemWatcher(pattern);
     

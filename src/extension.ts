@@ -79,14 +79,14 @@ export function activate(context: vscode.ExtensionContext) {
 	// Register event handlers
 	context.subscriptions.push(
 		vscode.workspace.onDidChangeConfiguration(e => updateConfigurationSettings(config, parser)),
-		vscode.workspace.onDidOpenTextDocument(doc => parseOpenDocument(parser, doc)),
-		vscode.workspace.onDidChangeTextDocument(e => parseOpenDocument(parser, e.document))
+		vscode.workspace.onDidOpenTextDocument(doc => parseOpenDocument(parser, doc, config)),
+		vscode.workspace.onDidChangeTextDocument(e => parseOpenDocument(parser, e.document, config))
 	);
 
 	// Run initial test discovery on files already present in the workspace
 	logger.trace('Run initial test discovery against files already open in the workspace');
 	for (const doc of vscode.workspace.textDocuments) {
-		parseOpenDocument(parser, doc);
+		parseOpenDocument(parser, doc, config);
 	}
 
 	logger.trace('Extension "phpunit-test-workbench" activated!');
@@ -104,9 +104,12 @@ async function updateConfigurationSettings(config: Configuration, parser: TestFi
 	refreshTestFilesInWorkspace(parser);
 }
 
-async function parseOpenDocument(parser: TestFileParser, document: vscode.TextDocument) {
-	let workspaceUri = vscode.workspace.getWorkspaceFolder(document.uri)?.uri;
-	parser.parseTestFileContents(workspaceUri!, document.uri, document.getText());
+async function parseOpenDocument(parser: TestFileParser, document: vscode.TextDocument, config: Configuration) {
+	let workspaceUri = vscode.workspace.getWorkspaceFolder(document.uri)!.uri;
+	let pattern = new vscode.RelativePattern(workspaceUri, config.get('phpunit.locatorPatternTests', '{test,tests,Test,Tests}/**/*Test.php', workspaceUri ));
+	if (vscode.languages.match({ pattern: pattern }, document) !== 0) {
+		parser.parseTestFileContents(workspaceUri!, document.uri, document.getText());
+	}
 }
 
 async function refreshTestFilesInWorkspace(parser: TestFileParser) {
