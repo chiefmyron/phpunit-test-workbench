@@ -240,6 +240,7 @@ export class TestRunner {
         // If a setting has been provided, it has first priority
         if (settingValue) {
             phpUnitBinaryPathOptions.push(vscode.Uri.parse(settingValue));
+            phpUnitBinaryPathOptions.push(vscode.Uri.parse(workspaceFolder.uri.path + '/' + settingValue));
         }
         
         // Define fallback options
