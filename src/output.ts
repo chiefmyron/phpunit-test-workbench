@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { Configuration } from './config';
+import { Settings } from './settings';
 
 export enum LogLevel {
     trace = 0,
@@ -11,11 +11,11 @@ export enum LogLevel {
 
 export class Logger {
     private outputChannel: vscode.OutputChannel;
-    private config: Configuration;
+    private settings: Settings;
 
-    constructor(config: Configuration) {
+    constructor(settings: Settings) {
         // Create channel and set logging level based on settings
-        this.config = config;
+        this.settings = settings;
         this.outputChannel = vscode.window.createOutputChannel('PHPUnit Test Workbench');
     }
 
@@ -28,7 +28,7 @@ export class Logger {
     }
 
     public log(level: LogLevel, message: string) {
-        if (level >= this.config.get('log.level', LogLevel.info)) {
+        if (level >= this.settings.get('log.level', LogLevel.info)) {
             this.outputChannel.appendLine(message);
         }
     }

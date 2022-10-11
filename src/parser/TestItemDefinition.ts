@@ -1,10 +1,10 @@
 import * as vscode from "vscode";
 
 export enum ItemType {
-    folder,
-    class,
-    method,
-    testsuite
+    namespace = "NAMESPACE",
+    class = "CLASS",
+    method = "METHOD",
+    testsuite = "TEST_SUITE"
 }
 
 export class TestItemDefinition {
@@ -35,7 +35,7 @@ export class TestItemDefinition {
     public getPhpUnitId(): string {
         let id: string = '';
 
-        if (this.type === ItemType.folder || this.type === ItemType.class || this.type === ItemType.method) {
+        if (this.type === ItemType.namespace || this.type === ItemType.class || this.type === ItemType.method) {
             if (this.namespace) {
                 id = this.namespace;
             }

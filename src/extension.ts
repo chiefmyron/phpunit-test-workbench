@@ -1,10 +1,12 @@
 // The module 'vscode' contains the VS Code extensibility API
 // Import the module and reference it with the alias vscode in your code below
 import * as vscode from 'vscode';
-import { Configuration } from './config';
+import { Settings } from './settings';
 import { Logger } from './output';
+import { ConfigFileParser } from './config/ConfigFileParser';
 import { TestFileParser } from './parser/TestFileParser';
 import { TestItemMap } from './parser/TestItemMap';
+import { TestSuiteMap } from './suites/TestSuiteMap';
 import { CommandHandler } from './runner/CommandHandler';
 import { TestRunner } from './runner/TestRunner';
 
@@ -12,14 +14,10 @@ import { TestRunner } from './runner/TestRunner';
 // your extension is activated the very first time the command is executed
 export function activate(context: vscode.ExtensionContext) {
 	// Load configuration from settings
-	const config = new Configuration();
-
-	// Retrieve machine level settings
-	const settings = vscode.workspace.getConfiguration('phpunit-test-workbench');
-	const settingTestOrgMethod = settings.get('phpunit.testOrganization', 'file');
+	const settings = new Settings();
 
 	// Create new logger
-	const logger = new Logger(config);
+	const logger = new Logger(settings);
 	logger.trace('Beginning activation of "phpunit-test-workbench" extension...');
 
 	// Create test controller
@@ -27,36 +25,42 @@ export function activate(context: vscode.ExtensionContext) {
 	const ctrl = vscode.tests.createTestController('phpunitTestController', 'PHPUnit Test Workbench');
 	context.subscriptions.push(ctrl);
 
-	// Create map of test items
-	logger.trace('Creating map of test item data');
-	const itemMap = new TestItemMap();
-
 	// Create test file parser
-	logger.trace(`Creating test file parser (test organization method: ${settingTestOrgMethod})`);
-	const parser = new TestFileParser(ctrl, itemMap, config, logger);
+	logger.trace('Creating test file parser');
+	const testItemMap = new TestItemMap();
+	const testSuiteMap = new TestSuiteMap();
+	const testFileParser = new TestFileParser(ctrl, testItemMap, testSuiteMap, settings, logger);
+
+	// Locate and parse test suite configuration files
+	logger.trace('Creating test suite configuration file parser');
+	const testSuiteConfigParser = new ConfigFileParser(testFileParser, testSuiteMap, settings, logger);
 
 	// Create test runner
 	logger.trace(`Creating test runner`);
-	const runner = new TestRunner(ctrl, itemMap, config, logger);
+	const runner = new TestRunner(ctrl, testItemMap, settings, logger);
 
 	// Create command handler
 	logger.trace(`Creating command handler`);
-	const commandHandler = new CommandHandler(ctrl, parser, itemMap, runner, config, logger);
+	const commandHandler = new CommandHandler(ctrl, testFileParser, testItemMap, runner, settings, logger);
 
 	// Refresh handler
 	ctrl.refreshHandler = async () => {
-		await parser.refreshTestFilesInWorkspace();
+		await testFileParser.refreshTestFilesInWorkspace();
 	};
 
 	// Resolve handler
 	ctrl.resolveHandler = async item => {
 		if (!item) {
 			// We are being asked to discover all tests for the workspace
-			await parser.discoverTestFilesInWorkspace();
+			await testFileParser.refreshTestFilesInWorkspace();
 		} else {
 			// We are being asked to resolve children for the supplied TestItem
-			let workspaceUri = vscode.workspace.getWorkspaceFolder(item.uri!)?.uri;
-			await parser.parseTestFileContents(workspaceUri!, item.uri!);
+			try {
+				if (item.uri && item.uri.scheme === 'file') {
+					let document = await vscode.workspace.openTextDocument(item.uri);
+					await testFileParser.parseOpenDocument(document);
+				}
+			} catch (e) { }
 		}
 	};
 
@@ -78,16 +82,13 @@ export function activate(context: vscode.ExtensionContext) {
 
 	// Register event handlers
 	context.subscriptions.push(
-		vscode.workspace.onDidChangeConfiguration(e => updateConfigurationSettings(config, parser)),
-		vscode.workspace.onDidOpenTextDocument(doc => parser.parseOpenDocument(doc, config)),
-		vscode.workspace.onDidChangeTextDocument(e => parser.parseOpenDocument(e.document, config))
+		vscode.workspace.onDidChangeConfiguration(e => updateConfigurationSettings(settings, testFileParser)),
+		vscode.workspace.onDidOpenTextDocument(document => testFileParser.parseOpenDocument(document)),
+		vscode.workspace.onDidChangeTextDocument(e => testFileParser.parseOpenDocument(e.document))
 	);
 
-	// Run initial test discovery on files already present in the workspace
-	logger.trace('Run initial test discovery against files already open in the workspace');
-	for (const doc of vscode.workspace.textDocuments) {
-		parser.parseOpenDocument(doc, config);
-	}
+	// Initialize workspace by scanning for configuration files and parsing currently open documents for tests
+	initializeWorkspace(logger, testFileParser);
 
 	logger.trace('Extension "phpunit-test-workbench" activated!');
 	logger.trace('');
@@ -96,9 +97,21 @@ export function activate(context: vscode.ExtensionContext) {
 // this method is called when your extension is deactivated
 export function deactivate() {}
 
-async function updateConfigurationSettings(config: Configuration, parser: TestFileParser) {
+async function initializeWorkspace(logger: Logger, testFileParser: TestFileParser) {
+	// Scan workspace folders for configuration files
+	logger.trace('Run initial configuration file discovery in workspace folders');
+	await testFileParser.setWorkspaceFileSystemWatchers();
+
+	// Run initial test discovery on files already present in the workspace
+	logger.trace('Run initial test discovery against files already open in the workspace');
+	for (const doc of vscode.workspace.textDocuments) {
+		testFileParser.parseOpenDocument(doc);
+	}
+}
+
+async function updateConfigurationSettings(settings: Settings, testFileParser: TestFileParser) {
 	// Refresh configuration object with new settings and refresh files found in the workspace
 	// (setting changes may affect the way TestItem objects are discovered and/or organized)
-	config.refresh();
-	parser.refreshTestFilesInWorkspace();
+	settings.refresh();
+	await testFileParser.refreshTestFilesInWorkspace();
 }
