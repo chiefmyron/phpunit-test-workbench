@@ -1,33 +1,70 @@
 /* eslint-disable @typescript-eslint/naming-convention */
 /// <reference path="../../types/php-parser.d.ts" />
+import * as vscode from 'vscode';
+import * as xml2js from 'xml2js';
 import Engine from 'php-parser';
 import { TextDecoder } from 'util';
-import * as vscode from 'vscode';
-import { Configuration } from '../config';
+import { Settings } from '../settings';
 import { Logger } from '../output';
 import { ItemType, TestItemDefinition } from './TestItemDefinition';
 import { TestItemMap } from './TestItemMap';
+import { TestSuiteMap } from '../suites/TestSuiteMap';
+import { TestSuite } from '../suites/TestSuite';
+
+export function generateTestItemId(type: ItemType, uri: vscode.Uri, name?: string) {
+    let parts: string[] = [
+        type,
+        uri.toString()
+    ];
+
+    if (name) {
+        parts.push(name);
+    }
+
+    return parts.join('::');
+}
+
+export function parseTestItemId(id: string) {
+    let parts = id.split('::');
+    if (parts.length < 2) {
+        return;
+    } else if (parts.length === 2) {
+        return {
+            type: parts[0],
+            uri: vscode.Uri.parse(parts[1])
+        };
+    } 
+    return {
+        type: parts[0],
+        uri: vscode.Uri.parse(parts[1]),
+        name: parts[2]
+    };
+}
 
 export class TestFileParser {
     private ctrl: vscode.TestController;
-    private itemMap: TestItemMap;
-    private config: Configuration;
-    private parser: Engine;
+    private testItemMap: TestItemMap;
+    private testSuiteMap: TestSuiteMap;
+    private settings: Settings;
+    private phpParser: Engine;
+    private xmlParser: xml2js.Parser;
     private logger: Logger;
 
     constructor(
         ctrl: vscode.TestController,
-        itemMap: TestItemMap,
-        config: Configuration,
+        testItemMap: TestItemMap,
+        testSuiteMap: TestSuiteMap,
+        settings: Settings,
         logger: Logger
     ) {
         this.ctrl = ctrl;
-        this.itemMap = itemMap;
-        this.config = config;
+        this.testItemMap = testItemMap;
+        this.testSuiteMap = testSuiteMap;
+        this.settings = settings;
         this.logger = logger;
 
         this.logger.trace('Creating new TestFileParser instance...');
-        this.parser = Engine.create({
+        this.phpParser = Engine.create({
             ast: {
                 withPositions: true,
                 withSource: true
@@ -46,51 +83,234 @@ export class TestFileParser {
                 short_tags: true
             }
         });
+        this.xmlParser = new xml2js.Parser();
         this.logger.trace('TestFileParser instance created!');
     }
 
+    /***********************************************************************/
+    /* Settings value wrappers and defaults                                */
+    /***********************************************************************/
+
+    private getTestDirectory(workspaceFolder?: vscode.WorkspaceFolder): string {
+        return this.settings.get('phpunit.testDirectory', 'tests', workspaceFolder);
+    }
+
+    private getTestSuffixes(workspaceFolder?: vscode.WorkspaceFolder): string[] {
+        let testFileSuffixes: string = this.settings.get('phpunit.testFileSuffix', 'Test.php,.phpt', workspaceFolder);
+        return testFileSuffixes.split(',');
+    }
+
+    private getTestSuffixGlob(workspaceFolder?: vscode.WorkspaceFolder): string {
+        let testFileSuffixes = this.getTestSuffixes(workspaceFolder);
+        testFileSuffixes.map((value: string, index: number) => { testFileSuffixes[index] = '*' + value; });
+        return '{' + testFileSuffixes.join(',') + '}';
+    }
+
+    private getTestLocatorPattern(workspaceFolder?: vscode.WorkspaceFolder) {
+        let pattern = this.getTestDirectory(workspaceFolder) + '/**/' + this.getTestSuffixGlob(workspaceFolder);
+        this.logger.trace('Using locator pattern for test file identification: ' + pattern);
+        return pattern;
+    }
+
+    private getPhpUnitConfigXmlLocatorPattern(workspaceFolder?: vscode.WorkspaceFolder) {
+        let pattern = this.settings.get('phpunit.locatorPatternConfigXml', 'phpunit.xml', workspaceFolder);
+        this.logger.trace('Using locator pattern for configuration file identification: ' + pattern);
+        return pattern;
+    }
+
+    /***********************************************************************/
+    /* Test controller operations                                          */
+    /***********************************************************************/
+
     public clearTestControllerItems() {
         this.ctrl.items.forEach(item => this.ctrl.items.delete(item.id));
-        this.itemMap.clear();
+        this.testItemMap.clear();
     }
 
     public removeTestFile(testItemId: string) {
         this.ctrl.items.delete(testItemId);
-        this.itemMap.delete(testItemId);
+        this.testItemMap.delete(testItemId);
     }
 
-    public async discoverTestFilesInWorkspace() {
+    /***********************************************************************/
+    /* Workspace file system watcher operations                            */
+    /***********************************************************************/
+
+    public async setWorkspaceFileSystemWatchers() {
         // Handle the case of no open folders
         if (!vscode.workspace.workspaceFolders) {
             return [];
         }
-    
+
+        // Discover relevant files in all workspace folders
         return Promise.all(
             vscode.workspace.workspaceFolders.map(async workspaceFolder => {
-                const patternString = this.config.get('phpunit.locatorPatternTests', '{test,tests,Test,Tests}/**/*Test.php', workspaceFolder);
-                const pattern = new vscode.RelativePattern(workspaceFolder, patternString);
-                const watcher = vscode.workspace.createFileSystemWatcher(pattern);
-    
-                // Set file related event handlers
-                watcher.onDidCreate(fileUri => this.parseTestFileContents(workspaceFolder.uri, fileUri));
-                watcher.onDidChange(fileUri => this.parseTestFileContents(workspaceFolder.uri, fileUri));
-                watcher.onDidDelete(fileUri => this.removeTestFile(fileUri.toString()));
-    
-                // Find initial set of files for workspace
-                for (const fileUri of await vscode.workspace.findFiles(pattern)) {
-                    await this.parseTestFileContents(workspaceFolder.uri, fileUri);
+                // Get glob pattern definition for location of PHPUnit configuration files
+                const configPatternStr = this.getPhpUnitConfigXmlLocatorPattern(workspaceFolder);
+                const configPattern = new vscode.RelativePattern(workspaceFolder, configPatternStr);
+
+                // Add event handler to clean up test suites on config file delete
+                const configWatcher = vscode.workspace.createFileSystemWatcher(configPattern);
+                configWatcher.onDidDelete(configFileUri => this.testSuiteMap.deleteConfigFileTestSuites(configFileUri));
+
+                // Add event handler to saved configuration files
+                // This should trigger a refresh of test files (as test suite definitions may have changed)
+                vscode.workspace.onDidSaveTextDocument(document => this.refreshTestFilesInWorkspace());
+
+                // Parse configuration file immediately (this is required to retrieve test suite definitions, in case
+                // test methods are organised by suite - see below)
+                await this.parseConfigFilesInWorkspace(workspaceFolder, configPattern);
+
+                // Locate test methods. Depending on settings, tests could be identified by test suites defined in
+                // PHPUnit configuration files, or by a glob pattern
+                if (this.settings.get('phpunit.useTestSuiteDefinitions', false) === true) {
+                    // Tests are identified by test suites in PHPUnit configuration file for the workspace
+                    let testSuites = this.testSuiteMap.getWorkspaceTestSuites(workspaceFolder);
+                    for (let testSuite of testSuites) {
+                        // Get glob pattern definition for location of test class files
+                        let testSuffixGlob = this.getTestSuffixGlob(workspaceFolder);
+                        let patterns = testSuite.getGlobsForTestSuiteItems(testSuffixGlob);
+                        await this.setFileSystemWatcherForPatterns(patterns, workspaceFolder, testSuite);
+                    }
+                } else {
+                    // Tests are identified by a glob pattern in a target directory
+                    const testPatternStr = this.getTestLocatorPattern(workspaceFolder);
+                    let patterns: vscode.RelativePattern[] = [
+                        new vscode.RelativePattern(workspaceFolder, testPatternStr)
+                    ];
+                    await this.setFileSystemWatcherForPatterns(patterns, workspaceFolder);
                 }
-    
-                return watcher;
             })
         );
     }
 
-    public async parseTestFileContents(workspaceFolderUri: vscode.Uri, testFileUri: vscode.Uri, testFileContents?: string) {
-        // Only need to parse PHP files
-        if (testFileUri.scheme !== 'file' || !testFileUri.path.endsWith('.php')) {
+    private async setFileSystemWatcherForPatterns(patterns: vscode.RelativePattern[], workspaceFolder: vscode.WorkspaceFolder, testSuite?: TestSuite) {
+        for (let pattern of patterns) {
+            // Set watcher for new, changed or deleted test files within the workspace
+            const watcher = vscode.workspace.createFileSystemWatcher(pattern);
+
+            // Set file related event handlers
+            watcher.onDidCreate(fileUri => this.parseTestFileContents(workspaceFolder, fileUri, testSuite));
+            watcher.onDidChange(fileUri => this.parseTestFileContents(workspaceFolder, fileUri, testSuite));
+            watcher.onDidDelete(fileUri => this.removeTestFile(fileUri.toString()));
+
+            // Find initial set of files for workspace
+            for (const fileUri of await vscode.workspace.findFiles(pattern)) {
+                await this.parseTestFileContents(workspaceFolder, fileUri, testSuite);
+            }
+        }
+    }
+
+    /***********************************************************************/
+    /* Test controller refresh event handler                               */
+    /***********************************************************************/
+
+    public async refreshTestFilesInWorkspace() {
+        // Reset test controller
+        this.clearTestControllerItems();
+
+        // Reset any existing stored test suite definitions
+        this.testSuiteMap.clear();
+
+        // Handle the case of no open folders
+        if (!vscode.workspace.workspaceFolders) {
             return;
         }
+
+        // Refresh files for each workspace folder
+        return Promise.all(
+            vscode.workspace.workspaceFolders.map(async workspaceFolder => {
+                // Get glob pattern definition for location of PHPUnit configuration files
+                const configPatternStr = this.getPhpUnitConfigXmlLocatorPattern(workspaceFolder);
+                const configPattern = new vscode.RelativePattern(workspaceFolder, configPatternStr);
+                await this.parseConfigFilesInWorkspace(workspaceFolder, configPattern);
+
+                // Locate test methods. Depending on settings, tests could be identified by test suites defined in
+                // PHPUnit configuration files, or by a glob pattern
+                if (this.settings.get('phpunit.useTestSuiteDefinitions', false) === true) {
+                    // Tests are identified by test suites in PHPUnit configuration file for the workspace
+                    let testSuites = this.testSuiteMap.getWorkspaceTestSuites(workspaceFolder);
+                    for (let testSuite of testSuites) {
+                        // Get glob pattern definition for location of test class files
+                        let testSuffixGlob = this.getTestSuffixGlob(workspaceFolder);
+                        let patterns = testSuite.getGlobsForTestSuiteItems(testSuffixGlob);
+                        for (let pattern of patterns) {
+                            await this.parseTestFilesInWorkspace(workspaceFolder, pattern, testSuite);
+                        }
+                    }
+                } else {
+                    // Tests are identified by a glob pattern in a target directory
+                    const testPatternStr = this.getTestLocatorPattern(workspaceFolder);
+                    let pattern = new vscode.RelativePattern(workspaceFolder, testPatternStr);
+                    await this.parseTestFilesInWorkspace(workspaceFolder, pattern);
+                }
+            })
+        );
+    }
+
+    /***********************************************************************/
+    /* Wrappers for parsing config files, text files and open documents    */
+    /***********************************************************************/
+
+    public async parseConfigFilesInWorkspace(workspaceFolder: vscode.WorkspaceFolder, pattern: vscode.RelativePattern) {
+        const configFileUris = await vscode.workspace.findFiles(pattern);
+        for (const configFileUri of configFileUris) {
+            await this.parseConfigFileContents(workspaceFolder, configFileUri);
+        }
+    }
+
+    public async parseTestFilesInWorkspace(workspaceFolder: vscode.WorkspaceFolder, pattern: vscode.RelativePattern, testSuite?: TestSuite) {
+        const testFileUris = await vscode.workspace.findFiles(pattern);
+        for (const testFileUri of testFileUris) {
+            await this.parseTestFileContents(workspaceFolder, testFileUri, testSuite);
+        }
+    }
+
+    public async parseOpenDocument(document: vscode.TextDocument) {
+        let workspaceFolder = vscode.workspace.getWorkspaceFolder(document.uri);
+        if (!workspaceFolder) {
+            return;
+        }
+
+        // Check if this document matches the pattern defined for configuration XML files for the workspace
+        const patternConfig = new vscode.RelativePattern(workspaceFolder, this.getPhpUnitConfigXmlLocatorPattern(workspaceFolder));
+        if (vscode.languages.match({ pattern: patternConfig }, document) !== 0) {
+            this.parseConfigFileContents(workspaceFolder, document.uri, document.getText());
+            return;
+        }
+
+        // If there are no test suties defined for this workspace folder, check against the test directory and suffix defined in settings
+        if (this.settings.get('phpunit.useTestSuiteDefinitions', false, workspaceFolder) !== true) {
+            let pattern = new vscode.RelativePattern(workspaceFolder, this.getTestLocatorPattern(workspaceFolder));
+            if (vscode.languages.match({ pattern: pattern }, document) !== 0) {
+                this.parseTestFileContents(workspaceFolder, document.uri, undefined, document.getText());
+            }
+            return;
+        }
+
+        // Get test suites for the workspace folder, and check if the document matches a file or directory definition
+        let testSuffixGlob = this.getTestSuffixGlob(workspaceFolder);
+        let testSuites = this.testSuiteMap.getWorkspaceTestSuites(workspaceFolder);
+        for (let testSuite of testSuites) {
+            // Set file system watcher for patterns
+            let patterns = testSuite.getGlobsForTestSuiteItems(testSuffixGlob);
+            for (let pattern of patterns) {
+                if (vscode.languages.match({ pattern: pattern }, document) !== 0) {
+                    this.parseTestFileContents(workspaceFolder, document.uri, testSuite, document.getText());
+                    return;
+                }
+            }
+        }
+
+        return;
+    }
+
+    /***********************************************************************/
+    /* Test class parsing logic                                            */
+    /***********************************************************************/
+
+    public async parseTestFileContents(workspaceFolder: vscode.WorkspaceFolder, testFileUri: vscode.Uri, testSuite?: TestSuite, testFileContents?: string) {
+        const workspaceFolderUri = workspaceFolder.uri;
         
         // Check if we need to load file contents from disk
         this.logger.trace(`Parsing contents of file for test cases: ${testFileUri.toString()}`);
@@ -108,7 +328,7 @@ export class TestFileParser {
         // Parse test file contents
         let tree: any;
         try {
-            tree = this.parser.parseCode(testFileContents);
+            tree = this.phpParser.parseCode(testFileContents);
         } catch (e) {
             this.logger.warn('An error occurred while parsing the test file! Error message: ' + e);
             return;
@@ -127,18 +347,22 @@ export class TestFileParser {
             this.logger.warn(`Unable to find class definition in test file: ${testFileUri.toString()}`);
             return;
         }
+
+        // Check if a TestItem has already been created for a parent test suite
+        let testSuiteTestItem: vscode.TestItem | undefined = undefined;
+        if (this.settings.get('phpunit.useTestSuiteDefinitions', false, workspaceFolder) === true && testSuite) {
+            testSuiteTestItem = this.createTestSuiteTestItem(testSuite, workspaceFolderUri);
+        }
     
         // Check if the TestItem for the test file has already been created
         let classTestItem: any;
-        if (this.config.get('phpunit.testOrganization', 'file') === 'namespace') {
+        if (this.settings.get('phpunit.testOrganization', 'file') === 'namespace') {
             // Verify or create hierarchy of namespace TestItems as parent nodes before creating the class test item
-            let namespaceTestItem = this.createNamespaceTestItems(namespaceNode, this.ctrl, workspaceFolderUri, testFileUri);
+            let namespaceTestItem = this.createNamespaceTestItems(namespaceNode, workspaceFolderUri, testFileUri, testSuiteTestItem);
             classTestItem = this.createClassTestItem(classNode, workspaceFolderUri, testFileUri, namespaceTestItem);
-        } else if (this.config.get('phpunit.testOrganization', 'file') === 'testsuite') {
-    
         } else {
             // Create class test item as a root node
-            classTestItem = this.createClassTestItem(classNode, workspaceFolderUri, testFileUri);
+            classTestItem = this.createClassTestItem(classNode, workspaceFolderUri, testFileUri, testSuiteTestItem);
         }
 
         // Create TestItems for test methods within the class
@@ -176,8 +400,37 @@ export class TestFileParser {
             return methods;
         }, []);
     }
+
+    private createTestSuiteTestItem(testSuite: TestSuite, workspaceFolderUri: vscode.Uri): vscode.TestItem {
+        let testSuiteId = generateTestItemId(ItemType.testsuite, testSuite.getConfigFileUri(), testSuite.getName());
+        let testSuiteLabel = 'SUITE: ' + testSuite.getName();
+        
+        // Check if this already exists as a child of the parent item
+        let testSuiteTestItem = this.ctrl.items.get(testSuiteId);
     
-    private createNamespaceTestItems(namespaceNode: any, ctrl: vscode.TestController, workspaceFolderUri: vscode.Uri, namespaceFolderUri: vscode.Uri): vscode.TestItem {
+        // If the class does not already exist, create it now
+        if (!testSuiteTestItem) {
+            // Create new TestItem for test suite
+            testSuiteTestItem = this.ctrl.createTestItem(testSuiteId, testSuiteLabel, testSuite.getConfigFileUri());
+            // if (classNode.loc) {
+            //     classTestItem.range = new vscode.Range(
+            //         new vscode.Position(classNode.loc.start.line, classNode.loc.start.column),
+            //         new vscode.Position(classNode.loc.end.line, classNode.loc.end.column)
+            //     );
+            // }
+            testSuiteTestItem.canResolveChildren = true;
+            this.logger.trace('- Created new TestItem for test suite: ' + testSuiteId);
+            this.ctrl.items.add(testSuiteTestItem);
+
+            // Add to TestItem map
+            const testSuiteTestItemDef = new TestItemDefinition(ItemType.testsuite, workspaceFolderUri, { });
+            this.testItemMap.set(testSuiteTestItem, testSuiteTestItemDef);
+        }
+        
+        return testSuiteTestItem;
+    }
+    
+    private createNamespaceTestItems(namespaceNode: any, workspaceFolderUri: vscode.Uri, namespaceFolderUri: vscode.Uri, parentTestItem?: vscode.TestItem): vscode.TestItem {
         // Determine the base path for the test file
         const namespace = namespaceNode.name;
         const namespaceParts = namespace.split('\\');
@@ -204,20 +457,24 @@ export class TestFileParser {
         }
         const basePath = basePathParts.join('/');
     
-        return this.traverseNamespaceHierarchy(workspaceFolderUri, basePath, namespaceParts);
+        return this.traverseNamespaceHierarchy(workspaceFolderUri, basePath, namespaceParts, parentTestItem);
     }
     
     private traverseNamespaceHierarchy(workspaceFolderUri: vscode.Uri, basePath: string, namespaceParts: string[], parentTestItem?: vscode.TestItem): vscode.TestItem {
-        // Construct identifier for the namespace
+        // Get name of this namespace component
+        let namespaceId: string;
+        let namespaceUri: vscode.Uri;
         let namespaceLabel = namespaceParts.shift();
-        let namespacePath = '';
-        if (parentTestItem) {
-            namespacePath = parentTestItem.id + '/' + namespaceLabel;
+        
+        // Determine URI for the associated namespace folder
+        if (parentTestItem && parseTestItemId(parentTestItem.id)!.type === ItemType.namespace) {
+            // Use parent namespace as the base for this namespace
+            namespaceUri = vscode.Uri.parse(parentTestItem.uri!.path + '/' + namespaceLabel);
         } else {
-            namespacePath = basePath + '/' + namespaceLabel;
+            // Use default values for top level namespace
+            namespaceUri = vscode.Uri.parse(basePath + '/' + namespaceLabel);
         }
-        let namespaceUri = vscode.Uri.parse(namespacePath);
-        let namespaceId = namespaceUri.toString();
+        namespaceId = generateTestItemId(ItemType.namespace, namespaceUri);
     
         // Check if this already exists as a child of the parent item
         let namespaceTestItem = undefined;
@@ -240,15 +497,16 @@ export class TestFileParser {
                 parentTestItem.children.add(namespaceTestItem);
 
                 // Rebuild namespace from label and parent test item, and use as the PHPUnit ID for the item
-                namespaceStr = this.itemMap.getTestItemDef(parentTestItem)!.getNamespace();
-                namespaceStr = namespaceStr + '\\' + namespaceLabel;
+                if (parseTestItemId(parentTestItem.id)!.type === ItemType.namespace) {
+                    namespaceStr = this.testItemMap.getTestItemDef(parentTestItem)!.getNamespace() + '\\' + namespaceLabel;
+                }
             } else {
                 this.ctrl.items.add(namespaceTestItem);
             }
 
             // Add to TestItem map
-            const namespaceTestItemDef = new TestItemDefinition(ItemType.folder, workspaceFolderUri, { namespace: namespaceStr });
-            this.itemMap.set(namespaceTestItem, namespaceTestItemDef);
+            const namespaceTestItemDef = new TestItemDefinition(ItemType.namespace, workspaceFolderUri, { namespace: namespaceStr });
+            this.testItemMap.set(namespaceTestItem, namespaceTestItemDef);
         }
     
         // If there are still additional namespace components, continue recursion
@@ -261,7 +519,7 @@ export class TestFileParser {
     }
     
     private createClassTestItem(classNode: any, workspaceFolderUri: vscode.Uri, testFileUri: vscode.Uri, parentTestItem?: vscode.TestItem): vscode.TestItem {
-        let classId = testFileUri.toString();
+        let classId = generateTestItemId(ItemType.class, testFileUri);
         let classLabel = classNode.name.name;
         
         // Check if this already exists as a child of the parent item
@@ -283,7 +541,7 @@ export class TestFileParser {
                 );
             }
             classTestItem.canResolveChildren = true;
-            this.logger.trace('- Created new TestItem for class: ' + classId);
+            this.logger.trace('- Created new TestItem for class: ' + testFileUri.toString());
         
             // Add new class TestItem as a child in the hierarchy
             let namespace = undefined;
@@ -291,14 +549,14 @@ export class TestFileParser {
                 parentTestItem.children.add(classTestItem);
 
                 // Build fully-qualified class name from label and parent namespace test item, and use as the PHPUnit ID for the item
-                namespace = this.itemMap.getTestItemDef(parentTestItem)!.getNamespace();
+                namespace = this.testItemMap.getTestItemDef(parentTestItem)!.getNamespace();
             } else {
                 this.ctrl.items.add(classTestItem);
             }
 
             // Add to TestItem map
             const classTestItemDef = new TestItemDefinition(ItemType.class, workspaceFolderUri, { namespace: namespace, classname: classLabel });
-            this.itemMap.set(classTestItem, classTestItemDef);
+            this.testItemMap.set(classTestItem, classTestItemDef);
         }
         
         return classTestItem;
@@ -307,7 +565,7 @@ export class TestFileParser {
     private createMethodTestItem(methodNode: any, workspaceFolderUri: vscode.Uri, testFileUri: vscode.Uri, classTestItem: vscode.TestItem): vscode.TestItem {
         // Create TestItem for method
         const methodName = methodNode.name.name;
-        const methodId = `${classTestItem!.id}::${methodName}`;
+        const methodId = generateTestItemId(ItemType.method, testFileUri, methodName);
         const methodTestItem = this.ctrl.createTestItem(methodId, methodName, testFileUri);
         if (methodNode.loc) {
             methodTestItem.range = new vscode.Range(
@@ -321,10 +579,71 @@ export class TestFileParser {
         classTestItem!.children.add(methodTestItem);
 
         // Add to TestItem map
-        let parentTestItemDef = this.itemMap.getTestItemDef(classTestItem)!;
+        let parentTestItemDef = this.testItemMap.getTestItemDef(classTestItem)!;
         const methodTestItemDef = new TestItemDefinition(ItemType.method, workspaceFolderUri, { namespace: parentTestItemDef.getNamespace(), classname: parentTestItemDef.getClassname(), method: methodName });
-        this.itemMap.set(methodTestItem, methodTestItemDef);
+        this.testItemMap.set(methodTestItem, methodTestItemDef);
 
         return methodTestItem;
+    }
+
+    /***********************************************************************/
+    /* PHPUnit configuration file parsing logic                            */
+    /***********************************************************************/
+
+    public async parseConfigFileContents(workspaceFolder: vscode.WorkspaceFolder, configFileUri: vscode.Uri, configFileContents?: string) {
+        const workspaceFolderUri = workspaceFolder.uri;
+        
+        // Check if we need to load file contents from disk
+        this.logger.trace(`Parsing contents of file for configuration: ${configFileUri.toString()}`);
+        if (!configFileContents) {
+            this.logger.trace('Loading config file contents from disk...');
+            try {
+                const rawContent = await vscode.workspace.fs.readFile(configFileUri);
+                configFileContents = new TextDecoder().decode(rawContent);
+            } catch (e) {
+                this.logger.warn('Unable to load config file content! Error message: ' + e);
+                return;
+            }
+        }
+
+        // Parse file contents
+        try {
+            this.xmlParser.parseStringPromise(configFileContents).then((result) => {
+                if (result.phpunit && result.phpunit.testsuites && result.phpunit.testsuites[0] && result.phpunit.testsuites[0].testsuite) {
+                    for (let testsuite of result.phpunit.testsuites[0].testsuite) {
+                        // Get test suite details
+                        let name = testsuite.$.name;
+                        let directories: string[] = [];
+                        if (testsuite.directory) {
+                            for (let directory of testsuite.directory) {
+                                directories.push(directory);
+                            }
+                        }
+
+                        let files: string[] = [];
+                        if (testsuite.file) {
+                            for (let file of testsuite.file) {
+                                files.push(file);
+                            }
+                        }
+
+                        let suite = new TestSuite(workspaceFolderUri, configFileUri, name, directories, files);
+                        this.testSuiteMap.set(suite);
+                    }
+                }
+                return;
+            })
+            .catch((err) => {
+                this.logger.warn('Error while parsing configuration file XML!');
+                this.logger.warn(`Configuration file: ${configFileUri.fsPath}`);
+                this.logger.warn(`Error message: ${err}`);
+                return;
+            });
+        } catch (e) {
+            this.logger.warn('Error while parsing configuration file XML!');
+            this.logger.warn(`Configuration file: ${configFileUri.fsPath}`);
+            this.logger.warn(`Error message: ${e}`);
+            return;
+        }
     }
 }

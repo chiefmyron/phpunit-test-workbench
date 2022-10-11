@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 
-export class Configuration {
+export class Settings {
     private settings: Map<string, vscode.WorkspaceConfiguration>;
 
     constructor() {

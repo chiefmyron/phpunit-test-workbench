@@ -1,6 +1,8 @@
 import { TestRunResultItem, TestRunResultStatus } from "./TestRunResultItem";
 import * as vscode from 'vscode';
 import { Logger } from "../output";
+import { generateTestItemId } from "../parser/TestFileParser";
+import { ItemType } from "../parser/TestItemDefinition";
 
 const patternTestStarted = new RegExp(/##teamcity\[testStarted name='(.*)' locationHint='php_qn:\/\/(.*)' flowId='(.*)']/);
 const patternTestFailed = new RegExp(/##teamcity\[testFailed name='(.*)' message='(.*)' details='(.*)' duration='(\d*)' flowId='(.*)']/);
@@ -48,7 +50,7 @@ export class TestRunResultParser {
                     let testFilenameUri = vscode.Uri.file(testFilename);
                     
                     // Create new test run result item to store result
-                    let testId = testFilenameUri.toString() + '::' + testMethodName;
+                    let testId = generateTestItemId(ItemType.method, testFilenameUri, testMethodName);
                     result = new TestRunResultItem(testId);
                     continue;
                 }

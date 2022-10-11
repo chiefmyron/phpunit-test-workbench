@@ -13,7 +13,8 @@
     "Other"
   ],
   "activationEvents": [
-    "workspaceContains:*.php"
+    "onLanguage:php",
+    "workspaceContains:**/*.phpt"
   ],
   "main": "./out/extension.js",
   "contributes": {
@@ -93,34 +94,37 @@
           "type": "string",
           "enum": [
             "file",
-            "namespace",
-            "testsuite"
+            "namespace"
           ],
           "enumItemLabels": [
             "By file",
-            "By namespace",
-            "By test suite (defined in `phpunit.xml` file)"
+            "By namespace"
           ],
           "default": "file",
           "markdownDescription": "Describes the way tests are organised in the Testing panel."
         },
-        "phpunit-test-workbench.phpunit.locatorPatternTests": {
-          "scope": "resource",
-          "type": "string",
-          "markdownDescription": "The glob describing the location of your test files. Default pattern is `{test,tests,Test,Tests}/**/*Test.php`.",
-          "default": "{test,tests,Test,Tests}/**/*Test.php"
+        "phpunit-test-workbench.phpunit.useTestSuiteDefinitions": {
+          "scope": "machine",
+          "type": "boolean",
+          "markdownDescription": "Use test suite definitions in your configuration file to locate and group tests in the Test Explorer. Note that using this option requires the use of a configuration file, and that the 'Test Directory' setting will be ignored."
         },
-        "phpunit-test-workbench.phpunit.locatorPatternPhpUnitXml": {
+        "phpunit-test-workbench.phpunit.locatorPatternConfigXml": {
           "scope": "resource",
           "type": "string",
-          "markdownDescription": "The glob describing the location of your `phpunit.xml` configuration file. If left blank, PHPUnit will fall back to default behaviour and attempt to find a `phpunit.xml` file in the test directory.",
-          "default": "{test,tests,Test,Tests}/phpunit.xml"
+          "markdownDescription": "The glob describing the location of your configuration file (usually named `phpunit.xml`). If left blank, PHPUnit will fall back to default behaviour and attempt to find a `phpunit.xml` file in the test directory.",
+          "default": "phpunit.xml"
         },
-        "phpunit-test-workbench.phpunit.targetDirectory": {
+        "phpunit-test-workbench.phpunit.testDirectory": {
           "scope": "resource",
           "type": "string",
-          "markdownDescription": "Relative path from the workspace folder root to the directory to run tests from (usually the `tests` folder). If left blank, the workspace folder root will be used. Note that if a `phpunit.xml` file has been found with testsuites defined, this setting is ignored.",
-          "default": ""
+          "markdownDescription": "Relative path from the workspace folder root to the directory where test files are located (usually the `tests` folder). If left blank, the workspace folder root will be used. Multiple paths can be specified, separated by commas (`,`).",
+          "default": "tests"
+        },
+        "phpunit-test-workbench.phpunit.testFileSuffix": {
+          "scope": "resource",
+          "type": "string",
+          "markdownDescription": "Suffix used to identify test files within the test directory. If left blank, the PHPUnit default suffixes (`Test.php` and `.phpt`) will be used.",
+          "default": "Test.php,.phpt"
         }
       }
     },
@@ -150,6 +154,7 @@
     "@types/mocha": "^9.1.1",
     "@types/node": "16.x",
     "@types/vscode": "^1.71.0",
+    "@types/xml2js": "^0.4.11",
     "@typescript-eslint/eslint-plugin": "^5.31.0",
     "@typescript-eslint/parser": "^5.31.0",
     "@vscode/test-electron": "^2.1.5",
@@ -160,6 +165,7 @@
   },
   "dependencies": {
     "child_process": "^1.0.2",
-    "php-parser": "^3.1.0"
+    "php-parser": "^3.1.0",
+    "xml2js": "^0.4.23"
   }
 }

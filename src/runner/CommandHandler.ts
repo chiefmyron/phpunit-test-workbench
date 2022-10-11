@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { Configuration } from "../config";
+import { Settings } from "../settings";
 import { Logger } from "../output";
 import { TestFileParser } from '../parser/TestFileParser';
 import { TestItemMap } from '../parser/TestItemMap';
@@ -10,7 +10,7 @@ export class CommandHandler {
     private parser: TestFileParser;
     private itemMap: TestItemMap;
     private runner: TestRunner;
-    private config: Configuration;
+    private settings: Settings;
     private logger: Logger;
 
     constructor(
@@ -18,14 +18,14 @@ export class CommandHandler {
         parser: TestFileParser,
         itemMap: TestItemMap,
         runner: TestRunner,
-        config: Configuration,
+        settings: Settings,
         logger: Logger
     ) {
         this.ctrl = ctrl;
         this.parser = parser;
         this.itemMap = itemMap;
         this.runner = runner;
-        this.config = config;
+        this.settings = settings;
         this.logger = logger;
     }
 
@@ -108,7 +108,7 @@ export class CommandHandler {
                 this.logger.info(`Running command: Run all tests...`);
 
                 // Ensure all test files have been parsed before starting the run
-                await this.parser.discoverTestFilesInWorkspace();
+                await this.parser.refreshTestFilesInWorkspace();
 
                 // Create test run request
                 request = new vscode.TestRunRequest();
