@@ -3,7 +3,6 @@
 import * as vscode from 'vscode';
 import { Settings } from './settings';
 import { Logger } from './output';
-import { ConfigFileParser } from './config/ConfigFileParser';
 import { TestFileParser } from './parser/TestFileParser';
 import { TestItemMap } from './parser/TestItemMap';
 import { TestSuiteMap } from './suites/TestSuiteMap';
@@ -30,10 +29,6 @@ export function activate(context: vscode.ExtensionContext) {
 	const testItemMap = new TestItemMap();
 	const testSuiteMap = new TestSuiteMap();
 	const testFileParser = new TestFileParser(ctrl, testItemMap, testSuiteMap, settings, logger);
-
-	// Locate and parse test suite configuration files
-	logger.trace('Creating test suite configuration file parser');
-	const testSuiteConfigParser = new ConfigFileParser(testFileParser, testSuiteMap, settings, logger);
 
 	// Create test runner
 	logger.trace(`Creating test runner`);
