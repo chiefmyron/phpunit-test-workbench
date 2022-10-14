@@ -2,6 +2,8 @@
 
 An extension to integrate PHPUnit with the native Test Explorer functionality within VS Code. Zero configuration required for common environment setups (i.e. where `php` is in your environment path, and PHPUnit is installed via Composer or included as a PHAR library).
 
+![Overview animation][img-overview]
+
 ## Features
 * Integrates with standard VS Code Test Explorer
 * Organise and run your tests:
@@ -25,7 +27,7 @@ An extension to integrate PHPUnit with the native Test Explorer functionality wi
 |-------|-----------|
 |PHPUnit: Run test method|If the cursor is located within a test method, execute only that test method.|
 |PHPUnit: Run test class|If the active editor is for a test class, execute all test methods within the class.|
-|PHPUnit: Run test suite|TBC|
+|PHPUnit: Run test suite|Display a dialog allowing the user to select from the list of test suites found in configuration files. All test methods within the class will be executed.|
 |PHPUnit: Run all tests|Run all tests identified in the Test Explorer|
 
 ## Configuration options
@@ -43,10 +45,34 @@ An extension to integrate PHPUnit with the native Test Explorer functionality wi
 |`phpunit.testOrganization`|Method used to organise and display tests in the Test Explorer:<li>__By file__: Show as a flat list of files, with test methods as children</li><li>__By namespace__: Hierarchical display, organized using the namespace structure (assumes compliance with [PSR-4](https://www.php-fig.org/psr/psr-4/))</li>|
 |`phpunit.useTestSuiteDefinitions`|Use test suite definitions within your configuration file to locate and group tests in the Test Explorer. Note that using this option requires a valid PHPUnit configuration file to be found via the `phpunit.locatorPatternConfigXml` glob pattern. Test suite definitions in the configuration file will ignore the `phpunit.testDirectory` setting.|
 
+## Examples
+### Test organization
+![Test organisation example][img-example-test-organization]
+
+### Group tests by test suite
+![Group tests by test suite][img-example-test-suites]
+
+### Display of failed tests
+![Display of failed tests][img-example-failed-test-peek]
+
+### Execute tests via commands
+![Execute tests via commands][img-example-commands]
+
 ## Known issues
 * No functionality for code coverage reports
 * Logging to file rather than output channel not yet implemented
 
 ## Release notes
-### v0.1 - 2022-09-29
+### v0.1.1 - 2022-10-15
+* __FIXED:__ Commands not executing tests for specific classes or methods ([#12](https://github.com/chiefmyron/phpunit-test-workbench/issues/12))
+* Updated documentation to include example images
+
+### v0.1.0 - 2022-10-14
 * Initial release
+
+
+[img-overview]: docs/images/overview.gif
+[img-example-test-organization]: docs/images/example-test-organization.gif
+[img-example-test-suites]: docs/images/example-test-suites.gif
+[img-example-failed-test-peek]: docs/images/example-failed-test-peek.gif
+[img-example-commands]: docs/images/example-commands.gif
