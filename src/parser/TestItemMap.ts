@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import { generateTestItemId } from './TestFileParser';
 import { ItemType, TestItemDefinition } from './TestItemDefinition';
 
 export class TestItemMap {
@@ -62,12 +63,12 @@ export class TestItemMap {
     }
 
     public getTestItemForClass(uri: vscode.Uri) {
-        let itemId = uri.toString();
+        let itemId = generateTestItemId(ItemType.class, uri);
         return this.getTestItem(itemId);
     }
 
     public getTestItemForMethod(uri: vscode.Uri, method: string) {
-        let itemId = uri.toString() + '::' + method;
+        let itemId = generateTestItemId(ItemType.method, uri, method);
         return this.getTestItem(itemId);
     }
 
@@ -85,5 +86,3 @@ export class TestItemMap {
         return this.testDataMap.get(testItem);
     }
 }
-
-
