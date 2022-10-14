@@ -1,5 +1,3 @@
-/* eslint-disable @typescript-eslint/naming-convention */
-/// <reference path="../../types/php-parser.d.ts" />
 import * as vscode from 'vscode';
 import * as xml2js from 'xml2js';
 import Engine from 'php-parser';
@@ -328,7 +326,7 @@ export class TestFileParser {
         // Parse test file contents
         let tree: any;
         try {
-            tree = this.phpParser.parseCode(testFileContents);
+            tree = this.phpParser.parseCode(testFileContents, testFileUri.fsPath);
         } catch (e) {
             this.logger.warn('An error occurred while parsing the test file! Error message: ' + e);
             return;
