@@ -5,6 +5,7 @@
   "repository": {
     "url": "https://github.com/chiefmyron/phpunit-test-workbench"
   },
+  "publisher": "chiefmyron",
   "version": "0.0.1",
   "engines": {
     "vscode": "^1.71.0"
