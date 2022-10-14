@@ -6,19 +6,19 @@
     "url": "https://github.com/chiefmyron/phpunit-test-workbench"
   },
   "publisher": "chiefmyron",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "engines": {
     "vscode": "^1.71.0"
   },
   "categories": [
-    "Other"
+    "Testing"
   ],
   "icon": "docs/images/icon.png",
   "activationEvents": [
     "onLanguage:php",
     "workspaceContains:**/*.phpt"
   ],
-  "main": "./dist/extension",
+  "main": "./dist/extension.js",
   "contributes": {
     "commands": [
       {
@@ -162,7 +162,7 @@
   "dependencies": {
     "buffer": "^6.0.3",
     "child_process": "^1.0.2",
-    "php-parser": "^3.1.0",
+    "php-parser": "^3.1.1",
     "stream-browserify": "^3.0.0",
     "timers-browserify": "^2.0.12",
     "util": "^0.12.4",
