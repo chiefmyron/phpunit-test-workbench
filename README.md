@@ -55,13 +55,17 @@ An extension to integrate PHPUnit with the native Test Explorer functionality wi
 ### Display of failed tests
 ![Display of failed tests][img-example-failed-test-peek]
 
+### Execute tests via commands
+![Execute tests via commands][img-example-commands]
+
 ## Known issues
 * No functionality for code coverage reports
 * Logging to file rather than output channel not yet implemented
 
 ## Release notes
 ### v0.1.1 - 2022-10-15
-* Minor documentation updates
+* __FIXED:__ Commands not executing tests for specific classes or methods ([#12](https://github.com/chiefmyron/phpunit-test-workbench/issues/12))
+* Updated documentation to include example images
 
 ### v0.1.0 - 2022-10-14
 * Initial release
@@ -71,3 +75,4 @@ An extension to integrate PHPUnit with the native Test Explorer functionality wi
 [img-example-test-organization]: docs/images/example-test-organization.gif
 [img-example-test-suites]: docs/images/example-test-suites.gif
 [img-example-failed-test-peek]: docs/images/example-failed-test-peek.gif
+[img-example-commands]: docs/images/example-commands.gif
