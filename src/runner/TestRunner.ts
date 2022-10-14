@@ -115,6 +115,8 @@ export class TestRunner {
     
             // Set status, duration and messages
             let message;
+            let resultMessage = result.getMessage().replace(/\|n/g, " ");
+            let resultMessageDetail = result.getMessageDetail().replace(/\|n/g, "\n");
             switch (result.getStatus()) {
                 case TestRunResultStatus.passed:
                     this.logger.info('✅ PASSED: ' + displayId);
@@ -122,20 +124,20 @@ export class TestRunner {
                     break;
                 case TestRunResultStatus.failed:
                     // Format failure message
-                    message = new vscode.MarkdownString('**' + result.getMessage() + '**');
+                    message = new vscode.MarkdownString('**' + resultMessage + '**');
                     this.logger.error('❌ FAILED: ' + displayId);
-                    this.logger.error(' - Failure reason: ' + result.getMessage());
+                    this.logger.error(' - Failure reason: ' + resultMessage);
                     if (result.getMessageDetail().length > 0) {
-                        message.appendMarkdown('\n' + result.getMessageDetail().replace(/\|n/g, "\n"));
-                        this.logger.error(' - Failure detail: ' + result.getMessageDetail().replace(/\|n/g, "\n"));
+                        message.appendMarkdown('\n' + resultMessageDetail);
+                        this.logger.error(' - Failure detail: ' + resultMessageDetail);
                     }
                     run.failed(item, new vscode.TestMessage(message), result.getDuration());
                     break;
                 case TestRunResultStatus.ignored:
                     // Format ignore message
-                    message = new vscode.MarkdownString('**' + result.getMessage() + '**');
+                    message = new vscode.MarkdownString('**' + resultMessage + '**');
                     if (result.getMessageDetail().length > 0) {
-                        message.appendMarkdown('\n' + result.getMessageDetail().replace(/\|n/g, "\n"));
+                        message.appendMarkdown('\n' + resultMessageDetail);
                     }
                     this.logger.error('➖ IGNORED: ' + displayId);
                     run.skipped(item);
