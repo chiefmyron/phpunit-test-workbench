@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { TestItemDefinition } from './TestItemDefinition';
+import { ItemType, TestItemDefinition } from './TestItemDefinition';
 
 export class TestItemMap {
     private testItemMap: Map<string, vscode.TestItem>;
@@ -43,6 +43,18 @@ export class TestItemMap {
     public clear() {
         this.testItemMap.clear();
         this.testDataMap = new WeakMap<vscode.TestItem, TestItemDefinition>();
+    }
+
+    public getTestSuites(): vscode.TestItem[] {
+        let testsuites: vscode.TestItem[] = [];
+        for (let [key, testItem] of this.testItemMap) {
+            let def = this.getTestItemDef(testItem);
+            if (def && def.getType() === ItemType.testsuite) {
+                testsuites.push(testItem);
+            }
+        }
+
+        return testsuites;
     }
 
     public getTestItem(itemId: string): vscode.TestItem | undefined {

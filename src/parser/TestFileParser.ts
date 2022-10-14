@@ -358,7 +358,7 @@ export class TestFileParser {
         let classTestItem: any;
         if (this.settings.get('phpunit.testOrganization', 'file') === 'namespace') {
             // Verify or create hierarchy of namespace TestItems as parent nodes before creating the class test item
-            let namespaceTestItem = this.createNamespaceTestItems(namespaceNode, workspaceFolderUri, testFileUri, testSuiteTestItem);
+            let namespaceTestItem = this.createNamespaceTestItems(namespaceNode, workspaceFolder, testFileUri, testSuiteTestItem);
             classTestItem = this.createClassTestItem(classNode, workspaceFolderUri, testFileUri, namespaceTestItem);
         } else {
             // Create class test item as a root node
@@ -423,41 +423,79 @@ export class TestFileParser {
             this.ctrl.items.add(testSuiteTestItem);
 
             // Add to TestItem map
-            const testSuiteTestItemDef = new TestItemDefinition(ItemType.testsuite, workspaceFolderUri, { });
+            const testSuiteTestItemDef = new TestItemDefinition(ItemType.testsuite, workspaceFolderUri, { testsuite: testSuite.getName() });
             this.testItemMap.set(testSuiteTestItem, testSuiteTestItemDef);
         }
         
         return testSuiteTestItem;
     }
     
-    private createNamespaceTestItems(namespaceNode: any, workspaceFolderUri: vscode.Uri, namespaceFolderUri: vscode.Uri, parentTestItem?: vscode.TestItem): vscode.TestItem {
-        // Determine the base path for the test file
-        const namespace = namespaceNode.name;
-        const namespaceParts = namespace.split('\\');
-        const filePathParts = namespaceFolderUri.path.split('/');
-        const workspacePathParts = workspaceFolderUri.path.split('/');
-    
-        let workspaceRootFound = false;
-        let basePathParts: string[] = [];
-        for (const part of filePathParts) {
-            basePathParts.push(part);
+    private createNamespaceTestItems(namespaceNode: any, workspaceFolder: vscode.WorkspaceFolder, namespaceFolderUri: vscode.Uri, parentTestItem?: vscode.TestItem): vscode.TestItem | undefined {
+        let namespace: string = namespaceNode.name;
+        let namespaceHierarchyRoot = parentTestItem;
 
-            if (workspaceRootFound === false && part === workspacePathParts[0]) {
-                workspacePathParts.shift();
-                if (workspacePathParts.length > 0) {
-                    continue;
+        // If the test directory has been mapped to a namespace, create a new TestItem to cover all of those namespace segments
+        let testDirectoryUri = workspaceFolder.uri.with({path: workspaceFolder.uri.path + '/' + this.getTestDirectory(workspaceFolder)});
+        let namespacePrefix: string = this.settings.get('phpunit.testNamespacePrefix', '', workspaceFolder);
+        if (namespacePrefix && namespacePrefix.length > 0) {
+            // Create a single namespace node that covers the entire test namespace prefix
+            let namespaceId = generateTestItemId(ItemType.namespace, testDirectoryUri);
+
+            // Check if this already exists as a child of the parent item
+            let namespaceTestItem = undefined;
+            if (parentTestItem) {
+                namespaceTestItem = parentTestItem.children.get(namespaceId);
+            } else {
+                namespaceTestItem = this.ctrl.items.get(namespaceId);
+            }
+
+            // If the namespace does not already exist, create it now
+            if (!namespaceTestItem) {
+                // Create new TestItem for namespace component
+                namespaceTestItem = this.ctrl.createTestItem(namespaceId, namespacePrefix, testDirectoryUri);
+                namespaceTestItem.canResolveChildren = true;
+                this.logger.trace('- Created new TestItem for test namespace prefix: ' + namespaceId);
+        
+                // Add new namespace TestItem as a child in the hierarchy
+                let testSuiteStr = undefined;
+                if (parentTestItem) {
+                    parentTestItem.children.add(namespaceTestItem);
+
+                    // Rebuild namespace from label and parent test item, and use as the PHPUnit ID for the item
+                    let parentTestItemDef = this.testItemMap.getTestItemDef(parentTestItem)!;
+                    testSuiteStr = parentTestItemDef.getTestSuite();
+                } else {
+                    this.ctrl.items.add(namespaceTestItem);
                 }
+
+                // Add to TestItem map
+                const namespaceTestItemDef = new TestItemDefinition(ItemType.namespace, workspaceFolder.uri, { testsuite: testSuiteStr, namespace: namespacePrefix });
+                this.testItemMap.set(namespaceTestItem, namespaceTestItemDef);
             }
 
-            if (part === namespaceParts[0]) {
-                basePathParts.pop();
-                break;
+            // Set the namespace hierarchy root to be the prefix namespace TestItem
+            namespaceHierarchyRoot = namespaceTestItem;
+
+            // Remove namespace prefix
+            namespacePrefix = namespacePrefix.replace(/\\/g, '\\'); // Fix for escaped backslashes
+            namespace = namespace.replace(namespacePrefix, '');
+            if (namespace.startsWith('\\')) {
+                namespace = namespace.replace('\\', '');
             }
-            
+
+            // If there are no remaining segments, return the prefix namespace TestItem immediately
+            if (namespace.length <= 0) {
+                return namespaceTestItem;
+            }
         }
-        const basePath = basePathParts.join('/');
-    
-        return this.traverseNamespaceHierarchy(workspaceFolderUri, basePath, namespaceParts, parentTestItem);
+
+        // Split the namespace into segments and traverse the hierarchy
+        const namespaceParts = namespace.split('\\');
+        if (namespaceParts.length > 0) {
+            return this.traverseNamespaceHierarchy(workspaceFolder.uri, testDirectoryUri.fsPath, namespaceParts, namespaceHierarchyRoot);
+        } else {
+            return parentTestItem;
+        }
     }
     
     private traverseNamespaceHierarchy(workspaceFolderUri: vscode.Uri, basePath: string, namespaceParts: string[], parentTestItem?: vscode.TestItem): vscode.TestItem {
@@ -492,20 +530,23 @@ export class TestFileParser {
             this.logger.trace('- Created new TestItem for namespace component: ' + namespaceId);
     
             // Add new namespace TestItem as a child in the hierarchy
+            let testSuiteStr = undefined;
             let namespaceStr = namespaceLabel;
             if (parentTestItem) {
                 parentTestItem.children.add(namespaceTestItem);
 
                 // Rebuild namespace from label and parent test item, and use as the PHPUnit ID for the item
+                let parentTestItemDef = this.testItemMap.getTestItemDef(parentTestItem)!;
+                testSuiteStr = parentTestItemDef.getTestSuite();
                 if (parseTestItemId(parentTestItem.id)!.type === ItemType.namespace) {
-                    namespaceStr = this.testItemMap.getTestItemDef(parentTestItem)!.getNamespace() + '\\' + namespaceLabel;
+                    namespaceStr = parentTestItemDef.getNamespace() + '\\' + namespaceLabel;
                 }
             } else {
                 this.ctrl.items.add(namespaceTestItem);
             }
 
             // Add to TestItem map
-            const namespaceTestItemDef = new TestItemDefinition(ItemType.namespace, workspaceFolderUri, { namespace: namespaceStr });
+            const namespaceTestItemDef = new TestItemDefinition(ItemType.namespace, workspaceFolderUri, { testsuite: testSuiteStr, namespace: namespaceStr });
             this.testItemMap.set(namespaceTestItem, namespaceTestItemDef);
         }
     
@@ -544,18 +585,24 @@ export class TestFileParser {
             this.logger.trace('- Created new TestItem for class: ' + testFileUri.toString());
         
             // Add new class TestItem as a child in the hierarchy
+            let testsuite = undefined;
             let namespace = undefined;
             if (parentTestItem) {
                 parentTestItem.children.add(classTestItem);
 
                 // Build fully-qualified class name from label and parent namespace test item, and use as the PHPUnit ID for the item
-                namespace = this.testItemMap.getTestItemDef(parentTestItem)!.getNamespace();
+                let parentTestItemDef = this.testItemMap.getTestItemDef(parentTestItem);
+                if (parentTestItemDef) {
+                    testsuite = parentTestItemDef.getTestSuite();
+                    namespace = parentTestItemDef.getNamespace();
+                }
+                
             } else {
                 this.ctrl.items.add(classTestItem);
             }
 
             // Add to TestItem map
-            const classTestItemDef = new TestItemDefinition(ItemType.class, workspaceFolderUri, { namespace: namespace, classname: classLabel });
+            const classTestItemDef = new TestItemDefinition(ItemType.class, workspaceFolderUri, { testsuite: testsuite, namespace: namespace, classname: classLabel });
             this.testItemMap.set(classTestItem, classTestItemDef);
         }
         
@@ -580,7 +627,7 @@ export class TestFileParser {
 
         // Add to TestItem map
         let parentTestItemDef = this.testItemMap.getTestItemDef(classTestItem)!;
-        const methodTestItemDef = new TestItemDefinition(ItemType.method, workspaceFolderUri, { namespace: parentTestItemDef.getNamespace(), classname: parentTestItemDef.getClassname(), method: methodName });
+        const methodTestItemDef = new TestItemDefinition(ItemType.method, workspaceFolderUri, { testsuite: parentTestItemDef.getTestSuite(), namespace: parentTestItemDef.getNamespace(), classname: parentTestItemDef.getClassname(), method: methodName });
         this.testItemMap.set(methodTestItem, methodTestItemDef);
 
         return methodTestItem;
@@ -613,21 +660,26 @@ export class TestFileParser {
                     for (let testsuite of result.phpunit.testsuites[0].testsuite) {
                         // Get test suite details
                         let name = testsuite.$.name;
-                        let directories: string[] = [];
+                        let suite = new TestSuite(workspaceFolderUri, configFileUri, name);
+
                         if (testsuite.directory) {
                             for (let directory of testsuite.directory) {
-                                directories.push(directory);
+                                if (typeof directory !== 'string' && directory._ && directory.$.suffix) {
+                                    suite.addDirectory(directory._, directory.$.suffix);
+                                } else {
+                                    suite.addDirectory(directory);
+                                }
                             }
                         }
 
                         let files: string[] = [];
                         if (testsuite.file) {
                             for (let file of testsuite.file) {
-                                files.push(file);
+                                suite.addFile(file);
                             }
                         }
 
-                        let suite = new TestSuite(workspaceFolderUri, configFileUri, name, directories, files);
+                        
                         this.testSuiteMap.set(suite);
                     }
                 }

@@ -60,25 +60,6 @@
           "default": 1,
           "markdownDescription": "Set the level of detail for log messages."
         },
-        "phpunit-test-workbench.log.channel": {
-          "scope": "resource",
-          "type": "string",
-          "enum": [
-            "panel",
-            "file"
-          ],
-          "enumItemLabels": [
-            "VS Code output panel",
-            "Log file"
-          ],
-          "default": "panel",
-          "markdownDescription": "Destination for logged messages."
-        },
-        "phpunit-test-workbench.log.file": {
-          "scope": "resource",
-          "type": "string",
-          "markdownDescription": "Location to file to write logged messages to. Only applicable when the log channel is `file`."
-        },
         "phpunit-test-workbench.php.binaryPath": {
           "scope": "resource",
           "type": "string",
@@ -102,6 +83,11 @@
           ],
           "default": "file",
           "markdownDescription": "Describes the way tests are organised in the Testing panel."
+        },
+        "phpunit-test-workbench.phpunit.testNamespacePrefix": {
+          "scope": "resource",
+          "type": "string",
+          "markdownDescription": "If using PSR-4 namespaces, use this setting to map your test namespace to the test directory. Default is blank (which assumes the folder structure inside your test directory matches the namespace structure exactly)."
         },
         "phpunit-test-workbench.phpunit.useTestSuiteDefinitions": {
           "scope": "machine",

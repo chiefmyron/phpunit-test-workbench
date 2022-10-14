@@ -3,7 +3,8 @@ import { Settings } from "../settings";
 import { Logger } from "../output";
 import { TestFileParser } from '../parser/TestFileParser';
 import { TestItemMap } from '../parser/TestItemMap';
-import { TestRunner } from "./TestRunner";
+import { TestRunner } from "../runner/TestRunner";
+import { TestItemQuickPickItem } from './TestItemQuickPickItem';
 
 export class CommandHandler {
     private ctrl: vscode.TestController;
@@ -58,7 +59,6 @@ export class CommandHandler {
                 }
 
                 // Find the closest method name above the location of the cursor
-                let currentLine = editor.selection.active.line;
                 for (let [id, methodTestItem] of classTestItem.children) {
                     if (methodTestItem.range && methodTestItem.range.contains(editor.selection.active)) {
                         testItem = methodTestItem;
@@ -84,7 +84,7 @@ export class CommandHandler {
                     return;
                 }
                 if (editor.document.languageId !== 'php') {
-                    this.logger.warn(`This command can only be executed on a PHPUnit test class (*.php file). If you have a PHPUnit test class open, make sure it is the active editor by clicking in it and then try again.`);
+                    this.logger.warn(`This command can only be executed on a PHPUnit test class. If you have a PHPUnit test class open, make sure it is the active editor by clicking in it and then try again.`);
                     return;
                 }
 
@@ -102,6 +102,41 @@ export class CommandHandler {
                 this.logger.info(`Command complete: Run test class`);
                 break;
             case 'run.suite':
+                // Get a list of available test suites
+                let options: vscode.QuickPickItem[] = [];
+                for (let testItem of this.itemMap.getTestSuites()) {
+                    let testItemDef = this.itemMap.getTestItemDef(testItem)!;
+                    options.push(new TestItemQuickPickItem(testItem.id, testItemDef.getTestSuite(), testItem.uri!.fsPath));
+                }
+
+                // Build quick pick to display known TestSuites
+                vscode.window.showQuickPick(options, {
+                    canPickMany: false,
+                    title: "Choose a test suite to run"
+                }).then(async selectedTestSuite => {
+                    this.logger.info(`Running command: Run test suite...`);
+
+                    // Validate selected test suite
+                    if (!selectedTestSuite) {
+                        this.logger.warn('No test suite selected');
+                        return;
+                    }
+                    if (!(selectedTestSuite instanceof TestItemQuickPickItem)) {
+                        this.logger.warn('Unable to determine test suite ID');
+                        return;
+                    }
+                    let testItem = this.itemMap.getTestItem(selectedTestSuite.getId());
+                    if (!testItem) {
+                        this.logger.warn(`${selectedTestSuite.getId()} is not a recognised test suite.`);
+                        return;
+                    }
+
+                    // Create test run request
+                    includes = [ testItem ];
+                    request = new vscode.TestRunRequest(includes);
+                    await this.runner.run(request, cancellationTokenSource.token);
+                    this.logger.info(`Command complete: Run test suite`);
+                });
 
                 break;
             case 'run.all':

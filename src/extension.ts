@@ -6,7 +6,7 @@ import { Logger } from './output';
 import { TestFileParser } from './parser/TestFileParser';
 import { TestItemMap } from './parser/TestItemMap';
 import { TestSuiteMap } from './suites/TestSuiteMap';
-import { CommandHandler } from './runner/CommandHandler';
+import { CommandHandler } from './ui/CommandHandler';
 import { TestRunner } from './runner/TestRunner';
 
 // this method is called when your extension is activated

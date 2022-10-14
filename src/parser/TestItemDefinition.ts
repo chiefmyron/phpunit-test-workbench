@@ -10,14 +10,15 @@ export enum ItemType {
 export class TestItemDefinition {
     private type: ItemType;
     private workspaceFolderUri: vscode.Uri;
-
+    private testsuite?: string;
     private namespace?: string;
     private classname?: string;
     private method?: string;
 
-    constructor(type: ItemType, workspaceFolderUri: vscode.Uri, details: { namespace?: string, classname?: string, method?: string}) {
+    constructor(type: ItemType, workspaceFolderUri: vscode.Uri, details: { testsuite?: string, namespace?: string, classname?: string, method?: string}) {
         this.type = type;
         this.workspaceFolderUri = workspaceFolderUri;
+        this.testsuite = details.testsuite;
         this.namespace = details.namespace;
         this.classname = details.classname;
         this.method = details.method;
@@ -54,6 +55,13 @@ export class TestItemDefinition {
         }
 
         return id;
+    }
+
+    public getTestSuite(): string {
+        if (!this.testsuite) {
+            return '';
+        }
+        return this.testsuite;
     }
 
     public getNamespace(): string {

@@ -62,9 +62,12 @@ export class TestRunner {
                 target = parentTestItem.uri!.fsPath;
             } else if (parentTestItemDef.getType() === ItemType.method) {
                 args.set('--filter', '\'' + parentTestItemDef.getPhpUnitId().replace(/\\/g, "\\\\") + '\'');
+                if (parentTestItemDef.getTestSuite().length > 0) {
+                    args.set('--testsuite', `"${parentTestItemDef.getTestSuite()}"`);
+                }
             } else if (parentTestItemDef.getType() === ItemType.testsuite) {
                 if (testItemParts && testItemParts.name) {
-                    args.set('--testsuite', testItemParts.name);
+                    args.set('--testsuite', `"${testItemParts.name}"`);
                 }
             }
     
@@ -123,8 +126,8 @@ export class TestRunner {
                     this.logger.error('❌ FAILED: ' + displayId);
                     this.logger.error(' - Failure reason: ' + result.getMessage());
                     if (result.getMessageDetail().length > 0) {
-                        message.appendMarkdown('\n' + result.getMessageDetail().replace("|n", "\n"));
-                        this.logger.error(' - Failure detail: ' + result.getMessageDetail().replace("|n", "\n"));
+                        message.appendMarkdown('\n' + result.getMessageDetail().replace(/\|n/g, "\n"));
+                        this.logger.error(' - Failure detail: ' + result.getMessageDetail().replace(/\|n/g, "\n"));
                     }
                     run.failed(item, new vscode.TestMessage(message), result.getDuration());
                     break;
@@ -132,7 +135,7 @@ export class TestRunner {
                     // Format ignore message
                     message = new vscode.MarkdownString('**' + result.getMessage() + '**');
                     if (result.getMessageDetail().length > 0) {
-                        message.appendMarkdown('\n' + result.getMessageDetail().replace("|n", "\n"));
+                        message.appendMarkdown('\n' + result.getMessageDetail().replace(/\|n/g, "\n"));
                     }
                     this.logger.error('➖ IGNORED: ' + displayId);
                     run.skipped(item);
