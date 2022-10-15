@@ -63,6 +63,9 @@ An extension to integrate PHPUnit with the native Test Explorer functionality wi
 * Logging to file rather than output channel not yet implemented
 
 ## Release notes
+### v0.1.2 - 2022-10-15
+* __FIXED:__ Build error where `xml2js` library was not referenced properly
+
 ### v0.1.1 - 2022-10-15
 * __FIXED:__ Commands not executing tests for specific classes or methods ([#12](https://github.com/chiefmyron/phpunit-test-workbench/issues/12))
 * Updated documentation to include example images
