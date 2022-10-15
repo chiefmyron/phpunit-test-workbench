@@ -2,7 +2,7 @@
 
 An extension to integrate PHPUnit with the native Test Explorer functionality within VS Code. Zero configuration required for common environment setups (i.e. where `php` is in your environment path, and PHPUnit is installed via Composer or included as a PHAR library).
 
-![Overview animation][img-overview]
+![Overview animation](docs/images/overview.gif)
 
 ## Features
 * Integrates with standard VS Code Test Explorer
@@ -47,16 +47,16 @@ An extension to integrate PHPUnit with the native Test Explorer functionality wi
 
 ## Examples
 ### Test organization
-![Test organisation example][img-example-test-organization]
+![Test organisation example](docs/images/example-test-organization.gif)
 
 ### Group tests by test suite
-![Group tests by test suite][img-example-test-suites]
+![Group tests by test suite](docs/images/example-test-suites.gif)
 
 ### Display of failed tests
-![Display of failed tests][img-example-failed-test-peek]
+![Display of failed tests](docs/images/example-failed-test-peek.gif)
 
 ### Execute tests via commands
-![Execute tests via commands][img-example-commands]
+![Execute tests via commands](docs/images/example-commands.gif)
 
 ## Known issues
 * No functionality for code coverage reports
@@ -69,10 +69,3 @@ An extension to integrate PHPUnit with the native Test Explorer functionality wi
 
 ### v0.1.0 - 2022-10-14
 * Initial release
-
-
-[img-overview]: docs/images/overview.gif
-[img-example-test-organization]: docs/images/example-test-organization.gif
-[img-example-test-suites]: docs/images/example-test-suites.gif
-[img-example-failed-test-peek]: docs/images/example-failed-test-peek.gif
-[img-example-commands]: docs/images/example-commands.gif
