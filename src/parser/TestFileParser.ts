@@ -490,13 +490,13 @@ export class TestFileParser {
         // Split the namespace into segments and traverse the hierarchy
         const namespaceParts = namespace.split('\\');
         if (namespaceParts.length > 0) {
-            return this.traverseNamespaceHierarchy(workspaceFolder.uri, testDirectoryUri.fsPath, namespaceParts, namespaceHierarchyRoot);
+            return this.traverseNamespaceHierarchy(workspaceFolder.uri, testDirectoryUri, namespaceParts, namespaceHierarchyRoot);
         } else {
             return parentTestItem;
         }
     }
     
-    private traverseNamespaceHierarchy(workspaceFolderUri: vscode.Uri, basePath: string, namespaceParts: string[], parentTestItem?: vscode.TestItem): vscode.TestItem {
+    private traverseNamespaceHierarchy(workspaceFolderUri: vscode.Uri, basePath: vscode.Uri, namespaceParts: string[], parentTestItem?: vscode.TestItem): vscode.TestItem {
         // Get name of this namespace component
         let namespaceId: string;
         let namespaceUri: vscode.Uri;
@@ -505,10 +505,11 @@ export class TestFileParser {
         // Determine URI for the associated namespace folder
         if (parentTestItem && parseTestItemId(parentTestItem.id)!.type === ItemType.namespace) {
             // Use parent namespace as the base for this namespace
-            namespaceUri = vscode.Uri.parse(parentTestItem.uri!.path + '/' + namespaceLabel);
+            let parentUri = parentTestItem.uri!;
+            namespaceUri = parentUri.with({ path: parentUri.path + '/' + namespaceLabel });
         } else {
             // Use default values for top level namespace
-            namespaceUri = vscode.Uri.parse(basePath + '/' + namespaceLabel);
+            namespaceUri = basePath.with({ path: basePath.path + '/' + namespaceLabel });
         }
         namespaceId = generateTestItemId(ItemType.namespace, namespaceUri);
     
@@ -524,6 +525,7 @@ export class TestFileParser {
         if (!namespaceTestItem) {
             // Create new TestItem for namespace component
             namespaceTestItem = this.ctrl.createTestItem(namespaceId, namespaceLabel!, namespaceUri);
+            console.log(namespaceUri.fsPath);
             namespaceTestItem.canResolveChildren = true;
             this.logger.trace('- Created new TestItem for namespace component: ' + namespaceId);
     
