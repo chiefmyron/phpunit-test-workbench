@@ -59,10 +59,15 @@ An extension to integrate PHPUnit with the native Test Explorer functionality wi
 ![Execute tests via commands](docs/images/example-commands.gif)
 
 ## Known issues
+* Test classes identified via @test annotations not identified
 * No functionality for code coverage reports
 * Logging to file rather than output channel not yet implemented
 
 ## Release notes
+### v0.1.3 - 2022-10-17
+* __FIXED:__ Clicking the 'Run test' icon in a test class sometimes refreshes the Test Explorer instead of running the test ([#19](https://github.com/chiefmyron/phpunit-test-workbench/issues/19))
+* __FIXED:__ Clicking 'Go to test' on a namespace in Test Explorer displays an error ([#17](https://github.com/chiefmyron/phpunit-test-workbench/issues/17))
+
 ### v0.1.2 - 2022-10-15
 * __FIXED:__ Build error where `xml2js` library was not referenced properly
 
