@@ -47,7 +47,7 @@ export function activate(context: vscode.ExtensionContext) {
 	ctrl.resolveHandler = async item => {
 		if (!item) {
 			// We are being asked to discover all tests for the workspace
-			await testFileParser.refreshTestFilesInWorkspace();
+			await testFileParser.parseTestFilesInWorkspace();
 		} else {
 			// We are being asked to resolve children for the supplied TestItem
 			try {
