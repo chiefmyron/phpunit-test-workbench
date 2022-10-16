@@ -157,7 +157,7 @@ export class TestFileParser {
 
                 // Parse configuration file immediately (this is required to retrieve test suite definitions, in case
                 // test methods are organised by suite - see below)
-                await this.parseConfigFilesInWorkspace(workspaceFolder, configPattern);
+                await this.parseConfigFilesInWorkspaceFolder(workspaceFolder, configPattern);
 
                 // Locate test methods. Depending on settings, tests could be identified by test suites defined in
                 // PHPUnit configuration files, or by a glob pattern
@@ -210,18 +210,23 @@ export class TestFileParser {
         // Reset any existing stored test suite definitions
         this.testSuiteMap.clear();
 
+        // Parse files in all workspace folders
+        return this.parseTestFilesInWorkspace();
+    }
+
+    public async parseTestFilesInWorkspace() {
         // Handle the case of no open folders
         if (!vscode.workspace.workspaceFolders) {
             return;
         }
 
-        // Refresh files for each workspace folder
+        // Parse files for each workspace folder
         return Promise.all(
             vscode.workspace.workspaceFolders.map(async workspaceFolder => {
                 // Get glob pattern definition for location of PHPUnit configuration files
                 const configPatternStr = this.getPhpUnitConfigXmlLocatorPattern(workspaceFolder);
                 const configPattern = new vscode.RelativePattern(workspaceFolder, configPatternStr);
-                await this.parseConfigFilesInWorkspace(workspaceFolder, configPattern);
+                await this.parseConfigFilesInWorkspaceFolder(workspaceFolder, configPattern);
 
                 // Locate test methods. Depending on settings, tests could be identified by test suites defined in
                 // PHPUnit configuration files, or by a glob pattern
@@ -233,14 +238,14 @@ export class TestFileParser {
                         let testSuffixGlob = this.getTestSuffixGlob(workspaceFolder);
                         let patterns = testSuite.getGlobsForTestSuiteItems(testSuffixGlob);
                         for (let pattern of patterns) {
-                            await this.parseTestFilesInWorkspace(workspaceFolder, pattern, testSuite);
+                            await this.parseTestFilesInWorkspaceFolder(workspaceFolder, pattern, testSuite);
                         }
                     }
                 } else {
                     // Tests are identified by a glob pattern in a target directory
                     const testPatternStr = this.getTestLocatorPattern(workspaceFolder);
                     let pattern = new vscode.RelativePattern(workspaceFolder, testPatternStr);
-                    await this.parseTestFilesInWorkspace(workspaceFolder, pattern);
+                    await this.parseTestFilesInWorkspaceFolder(workspaceFolder, pattern);
                 }
             })
         );
@@ -250,14 +255,14 @@ export class TestFileParser {
     /* Wrappers for parsing config files, text files and open documents    */
     /***********************************************************************/
 
-    public async parseConfigFilesInWorkspace(workspaceFolder: vscode.WorkspaceFolder, pattern: vscode.RelativePattern) {
+    public async parseConfigFilesInWorkspaceFolder(workspaceFolder: vscode.WorkspaceFolder, pattern: vscode.RelativePattern) {
         const configFileUris = await vscode.workspace.findFiles(pattern);
         for (const configFileUri of configFileUris) {
             await this.parseConfigFileContents(workspaceFolder, configFileUri);
         }
     }
 
-    public async parseTestFilesInWorkspace(workspaceFolder: vscode.WorkspaceFolder, pattern: vscode.RelativePattern, testSuite?: TestSuite) {
+    public async parseTestFilesInWorkspaceFolder(workspaceFolder: vscode.WorkspaceFolder, pattern: vscode.RelativePattern, testSuite?: TestSuite) {
         const testFileUris = await vscode.workspace.findFiles(pattern);
         for (const testFileUri of testFileUris) {
             await this.parseTestFileContents(workspaceFolder, testFileUri, testSuite);
@@ -672,7 +677,6 @@ export class TestFileParser {
                             }
                         }
 
-                        let files: string[] = [];
                         if (testsuite.file) {
                             for (let file of testsuite.file) {
                                 suite.addFile(file);
