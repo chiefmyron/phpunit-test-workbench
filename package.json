@@ -18,7 +18,7 @@
     "onLanguage:php",
     "workspaceContains:**/*.phpt"
   ],
-  "main": "./dist/extension.js",
+  "main": "./dist/extension",
   "contributes": {
     "commands": [
       {
@@ -130,15 +130,12 @@
     }
   },
   "scripts": {
-    "vscode:prepublish": "npm run package",
+    "vscode:prepublish": "webpack --mode production",
     "webpack": "webpack --mode development",
     "webpack-dev": "webpack --mode development --watch",
-    "package": "webpack --mode production --devtool hidden-source-map",
-    "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./",
-    "pretest": "npm run compile && npm run lint",
-    "lint": "eslint src --ext ts",
-    "test": "node ./out/test/runTest.js",
+    "package": "webpack --mode production --devtool hidden-source-map",
+    "lint": "eslint src --ext .ts,.tsx",
     "test-compile": "tsc -p ./"
   },
   "devDependencies": {
