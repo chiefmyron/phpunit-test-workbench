@@ -396,10 +396,17 @@ export class TestFileParser {
         
     private findTestMethodNodes(nodes: any[]): any[] {
         return nodes.reduce((methods: any[], node: any) => {
-            if (node.kind === 'method' && node.visibility === 'public' && node.name.name.startsWith('test')) {
-                return methods.concat(node);
+            if (node.kind === 'method' && node.visibility === 'public') {
+                // Identify test methods starting with 'test'
+                if (node.name.name.startsWith('test')) {
+                    return methods.concat(node);
+                }
+
+                // Identify test methods associated with an '@test' docblock annotation
+                if (node.leadingComments && node.leadingComments[0] && node.leadingComments[0].value.indexOf('@test', -1) > -1) {
+                    return methods.concat(node);
+                }
             }
-    
             return methods;
         }, []);
     }
@@ -530,7 +537,6 @@ export class TestFileParser {
         if (!namespaceTestItem) {
             // Create new TestItem for namespace component
             namespaceTestItem = this.ctrl.createTestItem(namespaceId, namespaceLabel!, namespaceUri);
-            console.log(namespaceUri.fsPath);
             namespaceTestItem.canResolveChildren = true;
             this.logger.trace('- Created new TestItem for namespace component: ' + namespaceId);
     
