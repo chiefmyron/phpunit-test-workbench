@@ -32,9 +32,13 @@ export class TestRunner {
         const run = this.ctrl.createTestRun(request);
         const queue = new Map<string, vscode.TestItem>();
     
-        // Get details of the first TestItem in the request (this should be the parent)
-        this.logger.showOutputChannel();
+        // Start test run
+        if (this.settings.get('log.autoDisplayOutput') === 'testRunAll') {
+            this.logger.showOutputChannel();
+        }
         this.logger.info('Starting new test run...');
+
+        // Get details of the first TestItem in the request (this should be the parent)
         let parentTestItem: vscode.TestItem;
         let testRunResults: TestRunResultItem[] = [];
         if (request.include) {
@@ -123,6 +127,11 @@ export class TestRunner {
                     run.passed(item, result.getDuration());
                     break;
                 case TestRunResultStatus.failed:
+                    // Trigger display of Output window, if settings allow
+                    if (this.settings.get('log.autoDisplayOutput') === 'testRunFailures') {
+                        this.logger.showOutputChannel();
+                    }
+
                     // Format failure message
                     message = new vscode.MarkdownString('**' + resultMessage + '**');
                     this.logger.error('❌ FAILED: ' + displayId);

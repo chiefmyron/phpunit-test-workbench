@@ -10,6 +10,13 @@
   "engines": {
     "vscode": "^1.71.0"
   },
+  "keywords": [
+    "php",
+    "phpunit",
+    "testing",
+    "unit test",
+    "test"
+  ],
   "categories": [
     "Testing"
   ],
@@ -61,6 +68,22 @@
           ],
           "default": 1,
           "markdownDescription": "Set the level of detail for log messages."
+        },
+        "phpunit-test-workbench.log.autoDisplayOutput": {
+          "scope": "machine",
+          "type": "string",
+          "enum": [
+            "never",
+            "testRunFailures",
+            "testRunAll"
+          ],
+          "enumItemLabels": [
+            "Never",
+            "On failed test runs only",
+            "On all test runs"
+          ],
+          "default": "testRunFailures",
+          "markdownDescription": "Control when to automatically display the Output panel showing log messages. Regardless of this setting, log output can always be viewed by opening the relevant Output panel manually."
         },
         "phpunit-test-workbench.php.binaryPath": {
           "scope": "resource",
