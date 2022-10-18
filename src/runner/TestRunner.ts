@@ -71,7 +71,7 @@ export class TestRunner {
                 }
             }
     
-            testRunResults = await this.runCommand(workspaceFolder, args, target);
+            testRunResults = await this.runCommand(token, workspaceFolder, args, target);
         } else {
             // Run all top-level test items, and their children
             let runRequired: boolean = false;
@@ -81,7 +81,7 @@ export class TestRunner {
                 let workspaceFolder = vscode.workspace.getWorkspaceFolder(itemDef!.getWorkspaceFolderUri());
                 if (currentWorkspaceFolder && workspaceFolder !== currentWorkspaceFolder) {
                     // Execute any tests from the current workspace
-                    let results = await this.runCommand(currentWorkspaceFolder, new Map<string, string>());
+                    let results = await this.runCommand(token, currentWorkspaceFolder, new Map<string, string>());
                     testRunResults = testRunResults.concat(results);
                     runRequired = false;
                 } else {
@@ -94,7 +94,7 @@ export class TestRunner {
     
             // Clean up final run if required
             if (runRequired === true && currentWorkspaceFolder) {
-                let results = await this.runCommand(currentWorkspaceFolder, new Map<string, string>());
+                let results = await this.runCommand(token, currentWorkspaceFolder, new Map<string, string>());
                 testRunResults = testRunResults.concat(results);
             }
         }
@@ -150,7 +150,7 @@ export class TestRunner {
         run.end();
     }
     
-    public async runCommand(workspaceFolder: vscode.WorkspaceFolder, args: Map<string, string>, target?: string): Promise<TestRunResultItem[]> {
+    public async runCommand(token: vscode.CancellationToken, workspaceFolder: vscode.WorkspaceFolder, args: Map<string, string>, target?: string): Promise<TestRunResultItem[]> {
         // Set binary and config file locations
         await this.initPhpBinaryPath(this.settings.get('php.binaryPath', undefined, workspaceFolder));
         await this.initPhpUnitBinaryPath(workspaceFolder, this.settings.get('phpunit.binaryPath', undefined, workspaceFolder));
@@ -187,11 +187,15 @@ export class TestRunner {
         this.logger.info(`Using PHPUnit target directory: ${targetPath}`);
         this.logger.trace('Executing command to start test run: ' + command);
 
+        // Set up handler for cancellation
+        let abortController = new AbortController();
+        token.onCancellationRequested(e => abortController.abort());
+
         // Attempt to run command
         let results: TestRunResultItem[] = [];
         const parser = new TestRunResultParser(this.logger);
         try {
-            const { stdout, stderr } = await cp_exec(command);
+            const { stdout, stderr } = await cp_exec(command, { signal: abortController.signal });
             if (stderr) {
                 this.logger.error(stderr);
             }
