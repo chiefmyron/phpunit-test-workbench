@@ -588,8 +588,8 @@ export class TestFileParser {
             classTestItem = this.ctrl.createTestItem(classId, classLabel, testFileUri);
             if (classNode.loc) {
                 classTestItem.range = new vscode.Range(
-                    new vscode.Position(classNode.loc.start.line, classNode.loc.start.column),
-                    new vscode.Position(classNode.loc.end.line, classNode.loc.end.column)
+                    new vscode.Position((classNode.loc.start.line - 1), classNode.loc.start.column),
+                    new vscode.Position((classNode.loc.end.line - 1), classNode.loc.end.column)
                 );
             }
             classTestItem.canResolveChildren = true;
@@ -627,8 +627,8 @@ export class TestFileParser {
         const methodTestItem = this.ctrl.createTestItem(methodId, methodName, testFileUri);
         if (methodNode.loc) {
             methodTestItem.range = new vscode.Range(
-                new vscode.Position(methodNode.loc.start.line, methodNode.loc.start.column),
-                new vscode.Position(methodNode.loc.end.line, methodNode.loc.end.column)
+                new vscode.Position((methodNode.loc.start.line - 1), methodNode.loc.start.column),
+                new vscode.Position((methodNode.loc.end.line - 1), methodNode.loc.end.column)
             );
         }
         this.logger.trace('- Created new TestItem for method: ' + methodId);
