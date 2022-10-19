@@ -23,19 +23,18 @@ An extension to integrate PHPUnit with the native Test Explorer functionality wi
 >If you are running in a Docker container, WSL or any other remote/virtual environment, this extension will work in conjunction with the [Remote Development](https://marketplace.visualstudio.com/items?itemName=ms-vscode-remote.vscode-remote-extensionpack) extension by Microsoft.
 
 ## Commands
-|Command|Description|
-|-------|-----------|
-|PHPUnit: Run test method|If the cursor is located within a test method, execute only that test method.|
-|PHPUnit: Run test class|If the active editor is for a test class, execute all test methods within the class.|
-|PHPUnit: Run test suite|Display a dialog allowing the user to select from the list of test suites found in configuration files. All test methods within the class will be executed.|
-|PHPUnit: Run all tests|Run all tests identified in the Test Explorer|
+|Command|ID|Description|
+|-------|--|-----------|
+|__PHPUnit: Run test method__|`phpunit-test-workbench.runMethod`|If the cursor is located within a test method, execute only that test method.|
+|__PHPUnit: Run test class__|`phpunit-test-workbench.runClass`|If the active editor is for a test class, execute all test methods within the class.|
+|__PHPUnit: Run test suite__|`phpunit-test-workbench.runSuite`|Display a dialog allowing the user to select from the list of test suites found in configuration files. All test methods within the class will be executed.|
+|__PHPUnit: Run all tests__|`phpunit-test-workbench.runAll`|Run all tests identified in the Test Explorer|
 
 ## Configuration options
 |Option|Description|
 |------|-----------|
-|`log.channel`|Send output either to an Output panel in the editor, or a log file.|
-|`log.file`|Path and filename to log output to (if log file is chosen as the logging channel).|
 |`log.level`|Control the level of information displayed in the output panel.|
+|`log.autoDisplayOutput`|Control when to automatically display the Output panel showing log messages. Regardless of this setting, log output can always be viewed by opening the relevant Output panel manually.|
 |`php.binaryPath`|Path to the location of the PHP binary. If left blank, it will be assumed that `php` is available via the environment `$PATH` variable.|
 |`phpunit.binaryPath`|Path to the location of the PHPUnit binary (either `phpunit` or `phpunit.phar`). If left blank, the following locations will be checked: <li>Composer `vendor` directory</li><li>`phpunit.phar` in the root of the current workspace directory</li>If not found anywhere, it will be assumed that `phpunit.phar` is available via the environment `$PATH` variable.|
 |`phpunit.locatorPatternConfigXml`|The glob describing the location of your configuration file (usually named `phpunit.xml`). The default pattern is `phpunit.xml`.|
@@ -59,11 +58,17 @@ An extension to integrate PHPUnit with the native Test Explorer functionality wi
 ![Execute tests via commands](docs/images/example-commands.gif)
 
 ## Known issues
-* Test classes identified via @test annotations not identified
 * No functionality for code coverage reports
 * Logging to file rather than output channel not yet implemented
 
 ## Release notes
+### v0.2.0 - 2022-10-19
+* __NEW:__ Detect tests identified with the `@tests` docblock annotation ([#21](https://github.com/chiefmyron/phpunit-test-workbench/issues/21))
+* __NEW:__ Setting to control when Output panel is displayed on test execution ([#25](https://github.com/chiefmyron/phpunit-test-workbench/issues/25))
+* __NEW:__ Highlight lines within test methods where test failures occur ([#26](https://github.com/chiefmyron/phpunit-test-workbench/issues/26))
+* __NEW:__ Wire up Test Explorer cancel button to actually cancel test run ([#27](https://github.com/chiefmyron/phpunit-test-workbench/issues/27))
+* __FIXED:__ Test run icons offset by 1 line from class and method identifiers ([#23](https://github.com/chiefmyron/phpunit-test-workbench/issues/23))
+
 ### v0.1.3 - 2022-10-17
 * __FIXED:__ Clicking the 'Run test' icon in a test class sometimes refreshes the Test Explorer instead of running the test ([#19](https://github.com/chiefmyron/phpunit-test-workbench/issues/19))
 * __FIXED:__ Clicking 'Go to test' on a namespace in Test Explorer displays an error ([#17](https://github.com/chiefmyron/phpunit-test-workbench/issues/17))
