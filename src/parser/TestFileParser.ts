@@ -314,6 +314,11 @@ export class TestFileParser {
 
     public async parseTestFileContents(workspaceFolder: vscode.WorkspaceFolder, testFileUri: vscode.Uri, testSuite?: TestSuite, testFileContents?: string) {
         const workspaceFolderUri = workspaceFolder.uri;
+
+        // Only need to parse actual source code files (prevents parsing of URIs with git scheme, for example)
+        if (testFileUri.scheme !== 'file') {
+            return;
+        }
         
         // Check if we need to load file contents from disk
         this.logger.trace(`Parsing contents of file for test cases: ${testFileUri.toString()}`);
