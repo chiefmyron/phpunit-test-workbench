@@ -30,9 +30,13 @@ export function activate(context: vscode.ExtensionContext) {
 	const testSuiteMap = new TestSuiteMap();
 	const testFileParser = new TestFileParser(ctrl, testItemMap, testSuiteMap, settings, logger);
 
+	// Create diagnostic collection (for displaying test failures as hovers in editors)
+	const diagnosticCollection = vscode.languages.createDiagnosticCollection('php');
+	context.subscriptions.push(diagnosticCollection);
+
 	// Create test runner
 	logger.trace(`Creating test runner`);
-	const runner = new TestRunner(ctrl, testItemMap, settings, logger);
+	const runner = new TestRunner(ctrl, testItemMap, diagnosticCollection, settings, logger);
 
 	// Create command handler
 	logger.trace(`Creating command handler`);
@@ -40,6 +44,7 @@ export function activate(context: vscode.ExtensionContext) {
 
 	// Refresh handler
 	ctrl.refreshHandler = async () => {
+		diagnosticCollection.clear();
 		await testFileParser.refreshTestFilesInWorkspace();
 	};
 
