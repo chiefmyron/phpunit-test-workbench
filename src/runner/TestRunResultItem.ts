@@ -15,6 +15,7 @@ export class TestRunResultItem {
     private testItemId: string;
     private message: string | undefined;
     private messageDetail: string | undefined;
+    private messageLineItem: number | undefined;
     private duration: number;
 
     constructor(testItemId: string) {
@@ -44,6 +45,11 @@ export class TestRunResultItem {
     }
 
     public setMessage(message: string | undefined): void {
+        // Parse message
+        if (message) {
+            // Replace linebreak characters
+            message = message.replace(/\|n/g, " ");
+        }
         this.message = message;
     }
 
@@ -55,7 +61,29 @@ export class TestRunResultItem {
     }
 
     public setMessageDetail(messageDetail: string| undefined): void {
+        // Parse message detail
+        if (messageDetail) {
+            // Replace linebreak characters and remove trailing spaces or linebreaks
+            messageDetail = messageDetail.trim();
+            messageDetail = messageDetail.replace(/\|n$/, '');
+            messageDetail = messageDetail.replace(/\|n/g, "\n");
+
+            // Check for specific error location (line number)
+            let messageDetailLines = messageDetail.split("\n"); 
+            let messageLine = messageDetailLines.pop();
+            if (messageLine && messageLine.indexOf(':') > 0) {
+                let messageLineParts = messageLine.split(':');
+                this.messageLineItem = Number(messageLineParts.pop());
+            }
+        }
         this.messageDetail = messageDetail;
+    }
+
+    public getMessageLineItem(): number {
+        if (this.messageLineItem) {
+            return this.messageLineItem;
+        }
+        return 0;
     }
 
     public getDuration(): number {

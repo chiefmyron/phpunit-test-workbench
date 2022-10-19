@@ -15,15 +15,17 @@ const cp_exec = util.promisify(exec);
 export class TestRunner {
     private ctrl: vscode.TestController;
     private itemMap: TestItemMap;
+    private diagnosticCollection: vscode.DiagnosticCollection;
     private settings: Settings;
     private logger: Logger;
     private phpBinaryPath: string = '';
     private phpUnitBinaryPath: string = '';
     private phpUnitConfigPath: string = '';
 
-    constructor(ctrl: vscode.TestController, itemMap: TestItemMap, settings: Settings, logger: Logger) {
+    constructor(ctrl: vscode.TestController, itemMap: TestItemMap, diagnosticCollection: vscode.DiagnosticCollection, settings: Settings, logger: Logger) {
         this.ctrl = ctrl;
         this.itemMap = itemMap;
+        this.diagnosticCollection = diagnosticCollection;
         this.settings = settings;
         this.logger = logger;
     }
@@ -37,6 +39,9 @@ export class TestRunner {
             this.logger.showOutputChannel();
         }
         this.logger.info('Starting new test run...');
+        this.logger.trace('Clearing diagnostic collection of any existing items');
+        this.diagnosticCollection.clear();
+        let diagnosticMap: Map<string, vscode.Diagnostic[]> = new Map();
 
         // Get details of the first TestItem in the request (this should be the parent)
         let parentTestItem: vscode.TestItem;
@@ -119,8 +124,8 @@ export class TestRunner {
     
             // Set status, duration and messages
             let message;
-            let resultMessage = result.getMessage().replace(/\|n/g, " ");
-            let resultMessageDetail = result.getMessageDetail().replace(/\|n/g, "\n");
+            let resultMessage = result.getMessage();
+            let resultMessageDetail = result.getMessageDetail();
             switch (result.getStatus()) {
                 case TestRunResultStatus.passed:
                     this.logger.info('✅ PASSED: ' + displayId);
@@ -137,10 +142,32 @@ export class TestRunner {
                     this.logger.error('❌ FAILED: ' + displayId);
                     this.logger.error(' - Failure reason: ' + resultMessage);
                     if (result.getMessageDetail().length > 0) {
-                        message.appendMarkdown('\n' + resultMessageDetail);
+                        //message.appendMarkdown('\n' + resultMessageDetail);
                         this.logger.error(' - Failure detail: ' + resultMessageDetail);
                     }
                     run.failed(item, new vscode.TestMessage(message), result.getDuration());
+
+                    // Add diagnostic to display error on correct line in editor
+                    if (result.getMessageLineItem() > 0) {
+                        let testDocumentUri = item.uri!;
+                        let testMessageLineItemIdx = result.getMessageLineItem() - 1;
+                        let diagnostics = diagnosticMap.get(testDocumentUri.toString());
+                        if (!diagnostics) {
+                            diagnostics = [];
+                        }
+
+                        let testDocument = await vscode.workspace.openTextDocument(testDocumentUri);
+                        let testDocumentLine = testDocument.lineAt(testMessageLineItemIdx);
+
+                        let diagnosticRange = new vscode.Range(
+                            new vscode.Position(testMessageLineItemIdx, testDocumentLine.firstNonWhitespaceCharacterIndex),
+                            new vscode.Position(testMessageLineItemIdx, testDocumentLine.text.length)
+                        );
+                        let diagnostic = new vscode.Diagnostic(diagnosticRange, resultMessage, vscode.DiagnosticSeverity.Error);
+                        diagnostic.source = 'PHPUnit Test Workbench';
+                        diagnostics.push(diagnostic);
+                        diagnosticMap.set(testDocumentUri.toString(), diagnostics);
+                    }
                     break;
                 case TestRunResultStatus.ignored:
                     // Format ignore message
@@ -153,6 +180,11 @@ export class TestRunner {
                     break;
             }
         }
+
+        // Apply diagnostics collected during parsing test run results
+        diagnosticMap.forEach((diagnostics, file) => {
+            this.diagnosticCollection.set(vscode.Uri.parse(file), diagnostics);
+        });
     
         // Mark the test run as complete
         this.logger.info('Test run completed!');
