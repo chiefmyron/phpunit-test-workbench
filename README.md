@@ -57,10 +57,6 @@ An extension to integrate PHPUnit with the native Test Explorer functionality wi
 ### Execute tests via commands
 ![Execute tests via commands](docs/images/example-commands.gif)
 
-## Known issues
-* No functionality for code coverage reports
-* Logging to file rather than output channel not yet implemented
-
 ## Release notes
 ### v0.2.0 - 2022-10-19
 * __NEW:__ Detect tests identified with the `@tests` docblock annotation ([#21](https://github.com/chiefmyron/phpunit-test-workbench/issues/21))
@@ -68,6 +64,7 @@ An extension to integrate PHPUnit with the native Test Explorer functionality wi
 * __NEW:__ Highlight lines within test methods where test failures occur ([#26](https://github.com/chiefmyron/phpunit-test-workbench/issues/26))
 * __NEW:__ Wire up Test Explorer cancel button to actually cancel test run ([#27](https://github.com/chiefmyron/phpunit-test-workbench/issues/27))
 * __FIXED:__ Test run icons offset by 1 line from class and method identifiers ([#23](https://github.com/chiefmyron/phpunit-test-workbench/issues/23))
+* __FIXED:__ Output from Git editors being parsed for test cases ([#31](https://github.com/chiefmyron/phpunit-test-workbench/issues/31))
 
 ### v0.1.3 - 2022-10-17
 * __FIXED:__ Clicking the 'Run test' icon in a test class sometimes refreshes the Test Explorer instead of running the test ([#19](https://github.com/chiefmyron/phpunit-test-workbench/issues/19))
