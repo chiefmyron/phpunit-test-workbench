@@ -35,6 +35,7 @@ export class TestRunner {
         const queue = new Map<string, vscode.TestItem>();
     
         // Start test run
+        this.logger.setTestRun(run);
         if (this.settings.get('log.autoDisplayOutput') === 'testRunAll') {
             this.logger.showOutputChannel();
         }
@@ -128,7 +129,7 @@ export class TestRunner {
             let resultMessageDetail = result.getMessageDetail();
             switch (result.getStatus()) {
                 case TestRunResultStatus.passed:
-                    this.logger.info('✅ PASSED: ' + displayId);
+                    this.logger.info(`✅ PASSED: ${displayId}`);
                     run.passed(item, result.getDuration());
                     break;
                 case TestRunResultStatus.failed:
@@ -142,7 +143,6 @@ export class TestRunner {
                     this.logger.error('❌ FAILED: ' + displayId);
                     this.logger.error(' - Failure reason: ' + resultMessage);
                     if (result.getMessageDetail().length > 0) {
-                        //message.appendMarkdown('\n' + resultMessageDetail);
                         this.logger.error(' - Failure detail: ' + resultMessageDetail);
                     }
                     run.failed(item, new vscode.TestMessage(message), result.getDuration());
@@ -175,7 +175,7 @@ export class TestRunner {
                     if (result.getMessageDetail().length > 0) {
                         message.appendMarkdown('\n' + resultMessageDetail);
                     }
-                    this.logger.error('➖ IGNORED: ' + displayId);
+                    this.logger.error('➖ IGNORED: ' + displayId, {testItem: item});
                     run.skipped(item);
                     break;
             }
@@ -188,6 +188,7 @@ export class TestRunner {
     
         // Mark the test run as complete
         this.logger.info('Test run completed!');
+        this.logger.setTestRun(undefined);
         run.end();
     }
     
