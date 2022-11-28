@@ -3,25 +3,30 @@ import * as vscode from 'vscode';
 import { Logger } from "../output";
 import { generateTestItemId } from "../parser/TestFileParser";
 import { ItemType } from "../parser/TestItemDefinition";
+import { TestRunResult } from "./TestRunResult";
 
 const patternTestStarted = new RegExp(/##teamcity\[testStarted name='(.*)' locationHint='php_qn:\/\/(.*)' flowId='(.*)']/);
 const patternTestFailed = new RegExp(/##teamcity\[testFailed name='(.*)' message='(.*)' details='(.*)' duration='(\d*)' flowId='(.*)']/);
 const patternTestIgnored = new RegExp(/##teamcity\[testIgnored name='(.*)' message='(.*)' details='(.*)' duration='(\d*)' flowId='(.*)']/);
 const patternTestFinished = new RegExp(/##teamcity\[testFinished name='(.*)' duration='(\d*)' flowId='(.*)']/);
 const patternSummaryOk = new RegExp(/OK \((\d*) tests, (\d*) assertions/);
-const patternSummaryFailed = new RegExp(/Tests: (\d*), Assertions: (\d*), Failures: (\d*)/);
+const patternSummaryNotOk = new RegExp(/Tests: (\d*), Assertions: (\d*)/);
+const patternSummaryNotOkSkipped = new RegExp(/Skipped: (\d*)/);
+const patternSummaryNotOkFailures = new RegExp(/Failures: (\d*)/);
+const patternSummaryNotOkErrors = new RegExp(/Errors: (\d*)/);
 const patternFatalError = new RegExp(/Fatal error: (.*)/);
 
 export class TestRunResultParser {
     private logger: Logger;
-    private results: TestRunResultItem[] = [];
+    private results: TestRunResult;
 
     constructor(logger: Logger) {
         this.logger = logger;
+        this.results = new TestRunResult();
     }
 
-    public parse(contents: string): TestRunResultItem[] {
-        this.results = []; // Reset results list
+    public parse(contents: string): TestRunResult {
+        this.results.reset();
         const lines: string[] = contents.split(/\r\n|\r|\n/g);
 
         // Parse individual lines
@@ -87,25 +92,37 @@ export class TestRunResultParser {
                         result.setStatus(TestRunResultStatus.passed);
                     }
                     result.setDuration(duration);
-                    this.results.push(result);
+                    this.results.addTestRunResultItem(result);
                 }
                 continue;
             }
 
-            // Check if the line is a test run summary
+            // Check if the line is a test run summary (with no failures, errors or skipped tests)
             if (m = line.match(patternSummaryOk)) {
-                let numTests = parseInt(m.at(1)!);
-                let numAssertions = parseInt(m.at(2)!);
-                this.logger.info(`Test run completed: ${numTests} tests, ${numAssertions} assertions\n`);
+                this.results.setNumTests(parseInt(m.at(1)!));
+                this.results.setNumAssertions(parseInt(m.at(2)!));
                 break;
             }
 
-            // Check if the line is a test run summary (with failed tests)
-            if (m = line.match(patternSummaryFailed)) {
-                let numTests = parseInt(m.at(1)!);
-                let numAssertions = parseInt(m.at(2)!);
-                let numFailures = parseInt(m.at(3)!);
-                this.logger.error(`Test run completed: ${numTests} tests, ${numAssertions} assertions, ${numFailures} failures\n`);
+            // Check if the line is a test run summary (with one or more issues)
+            if (m = line.match(patternSummaryNotOk)) {
+                this.results.setNumTests(parseInt(m.at(1)!));
+                this.results.setNumAssertions(parseInt(m.at(2)!));
+
+                // Check for skipped tests
+                if (m = line.match(patternSummaryNotOkSkipped)) {
+                    this.results.setNumSkipped(parseInt(m.at(1)!));
+                }
+
+                // Check for failed tests
+                if (m = line.match(patternSummaryNotOkFailures)) {
+                    this.results.setNumFailed(parseInt(m.at(1)!));
+                }
+
+                // Check for errored tests
+                if (m = line.match(patternSummaryNotOkErrors)) {
+                    this.results.setNumErrors(parseInt(m.at(1)!));
+                }
                 break;
             }
 
