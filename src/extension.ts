@@ -68,7 +68,13 @@ export function activate(context: vscode.ExtensionContext) {
 	ctrl.createRunProfile(
 		'Run tests',
 		vscode.TestRunProfileKind.Run,
-		(request, token) => { runner.run(request, token); },
+		(request, token) => { runner.run(request, token, false); },
+		true
+	);
+	ctrl.createRunProfile(
+		'Debug tests',
+		vscode.TestRunProfileKind.Debug,
+		(request, token) => { runner.run(request, token, true); },
 		true
 	);
 

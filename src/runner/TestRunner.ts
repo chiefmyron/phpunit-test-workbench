@@ -8,6 +8,7 @@ import { ItemType } from '../parser/TestItemDefinition';
 import { Settings } from '../settings';
 import { TestItemMap } from '../parser/TestItemMap';
 import { parseTestItemId } from '../parser/TestFileParser';
+import { DebugConfigQuickPickItem } from '../ui/DebugConfigQuickPickItem';
 
 // Create promisified version of child process execution
 const cp_exec = util.promisify(exec);
@@ -30,16 +31,15 @@ export class TestRunner {
         this.logger = logger;
     }
 
-    public async run(request: vscode.TestRunRequest, token: vscode.CancellationToken) {
+    public async run(request: vscode.TestRunRequest, token: vscode.CancellationToken, debug: boolean = false) {
         const run = this.ctrl.createTestRun(request);
         const queue = new Map<string, vscode.TestItem>();
-    
+
         // Start test run
         this.logger.setTestRun(run);
         if (this.settings.get('log.autoDisplayOutput') === 'testRunAll') {
             this.logger.showOutputChannel();
         }
-        this.logger.info('Starting new test run...');
         this.logger.trace('Clearing diagnostic collection of any existing items');
         this.diagnosticCollection.clear();
         let diagnosticMap: Map<string, vscode.Diagnostic[]> = new Map();
@@ -81,7 +81,7 @@ export class TestRunner {
                 }
             }
     
-            testRunResults = await this.runCommand(token, workspaceFolder, args, target);
+            testRunResults = await this.runCommand(token, workspaceFolder, debug, target, {phpunit: args});
         } else {
             // Run all top-level test items, and their children
             let runRequired: boolean = false;
@@ -91,7 +91,7 @@ export class TestRunner {
                 let workspaceFolder = vscode.workspace.getWorkspaceFolder(itemDef!.getWorkspaceFolderUri());
                 if (currentWorkspaceFolder && workspaceFolder !== currentWorkspaceFolder) {
                     // Execute any tests from the current workspace
-                    let results = await this.runCommand(token, currentWorkspaceFolder, new Map<string, string>());
+                    let results = await this.runCommand(token, currentWorkspaceFolder, debug);
                     testRunResults = testRunResults.concat(results);
                     runRequired = false;
                 } else {
@@ -104,7 +104,7 @@ export class TestRunner {
     
             // Clean up final run if required
             if (runRequired === true && currentWorkspaceFolder) {
-                let results = await this.runCommand(token, currentWorkspaceFolder, new Map<string, string>());
+                let results = await this.runCommand(token, currentWorkspaceFolder, debug );
                 testRunResults = testRunResults.concat(results);
             }
         }
@@ -139,12 +139,12 @@ export class TestRunner {
                     }
 
                     // Format failure message
-                    message = new vscode.MarkdownString('**' + resultMessage + '**');
-                    this.logger.error('❌ FAILED: ' + displayId);
-                    this.logger.error(' - Failure reason: ' + resultMessage);
+                    this.logger.error(`❌ FAILED: ${displayId}`);
+                    this.logger.error(` - Failure reason: ${resultMessage}`);
                     if (result.getMessageDetail().length > 0) {
-                        this.logger.error(' - Failure detail: ' + resultMessageDetail);
+                        this.logger.error(` - Failure detail: ${resultMessageDetail}`);
                     }
+                    message = new vscode.MarkdownString('**' + resultMessage + '**');
                     run.failed(item, new vscode.TestMessage(message), result.getDuration());
 
                     // Add diagnostic to display error on correct line in editor
@@ -192,27 +192,89 @@ export class TestRunner {
         run.end();
     }
     
-    public async runCommand(token: vscode.CancellationToken, workspaceFolder: vscode.WorkspaceFolder, args: Map<string, string>, target?: string): Promise<TestRunResultItem[]> {
+    public async runCommand(token: vscode.CancellationToken, workspaceFolder: vscode.WorkspaceFolder, debug: boolean, target?: string, args?: {env?: Map<string, string>, php?: Map<string, string>, phpunit?: Map<string, string>}): Promise<TestRunResultItem[]> {
         // Set binary and config file locations
         await this.initPhpBinaryPath(this.settings.get('php.binaryPath', undefined, workspaceFolder));
         await this.initPhpUnitBinaryPath(workspaceFolder, this.settings.get('phpunit.binaryPath', undefined, workspaceFolder));
         await this.initPhpUnitConfigPath(workspaceFolder, this.settings.get('phpunit.locatorPatternConfigXml', undefined, workspaceFolder));
 
-        // Construct the basic command string for executing PHPUnit
-        this.logger.info(`Using PHP binary path: ${this.phpBinaryPath}`);
-        this.logger.info(`Using PHPUnit binary path: ${this.phpUnitBinaryPath}`);
-        let command = this.phpBinaryPath + ' ' + this.phpUnitBinaryPath;
+        // Initialise arguments
+        let argsEnv = args?.env ?? new Map<string, string>();
+        let argsPhp = args?.php ?? new Map<string, string>();
+        let argsPhpunit = args?.phpunit ?? new Map<string, string>();
 
-        // Add in command-line options
-        args.set('--teamcity', '');
+        // If test run is being debugged, prompt user to select debug configuration
+        if (debug) {
+            // Get launch configurations for workspace
+            let launch = vscode.workspace.getConfiguration('launch', workspaceFolder);
+            let launchConfigs: any = launch.get('configurations');
+
+            let launchOptions: vscode.QuickPickItem[] = [];
+            for (let launchConfig of launchConfigs) {
+                if (launchConfig.type === 'php') {
+                    launchOptions.push(new DebugConfigQuickPickItem(
+                        launchConfig.name,
+                        launchConfig.port ?? this.settings.get('xdebug.clientPort', 9003),
+                        launchConfig.hostname ?? this.settings.get('xdebug.clientHost', 'localhost')
+                    ));
+                }
+            }
+
+            let selectedQuickPickItem;
+            if (launchOptions.length === 1) {
+                selectedQuickPickItem = launchOptions[0];
+            } else if (launchOptions.length > 1) {
+                // Display quick pick to display available debug configurations
+                selectedQuickPickItem = await vscode.window.showQuickPick(launchOptions, {
+                    canPickMany: false,
+                    title: `Select debug config for workspace folder '${workspaceFolder.name}'`
+                });
+            }
+
+            if (selectedQuickPickItem && (selectedQuickPickItem instanceof DebugConfigQuickPickItem)) {
+                // Add Xdebug parameters to PHP command line arguments
+                argsPhp.set('-dxdebug.mode', 'debug');
+                argsPhp.set('-dxdebug.start_with_request', 'yes');
+                argsPhp.set('-dxdebug.client_port', String(selectedQuickPickItem.getClientPort()));
+                argsPhp.set('-dxdebug.client_host', selectedQuickPickItem.getClientHost());
+
+                // Start debug session
+                await vscode.debug.startDebugging(workspaceFolder, selectedQuickPickItem.label);
+            } else {
+                this.logger.warn('Unable to locate a valid debug configuration for this workspace. Test run will be executed without debugging enabled.');
+            }
+        }
+
+        // Start building command string
+        let commandParts: string[] = [];
+
+        // Construct the basic command string for executing PHP
+        this.logger.info(`Using PHP binary path: ${this.phpBinaryPath}`);
+        commandParts.push(this.phpBinaryPath);
+
+        // Add in PHP command-line arguments to command string
+        for (const [key, value] of argsPhp) {
+            if (value && value.length > 0) {
+                commandParts.push(key + '=' + value);
+            } else {
+                commandParts.push(key);
+            }
+        }
+
+        // Add in PHPUnit binary to the command string
+        this.logger.info(`Using PHPUnit binary path: ${this.phpUnitBinaryPath}`);
+        commandParts.push(this.phpUnitBinaryPath);
+
+        // Add in PHPUnit command-line arguments to command string
+        argsPhpunit.set('--teamcity', '');
         if (this.phpUnitConfigPath.length > 0) {
             this.logger.info(`Using PHPUnit configuration file: ${this.phpUnitConfigPath}`);
-            args.set('-c', this.phpUnitConfigPath);
+            argsPhpunit.set('-c', this.phpUnitConfigPath);
         }
-        for (const [key, value] of args) {
-            command = command + ' ' + key;
+        for (const [key, value] of argsPhpunit) {
+            commandParts.push(key);
             if (value && value.length > 0) {
-                command = command + ' ' + value;
+                commandParts.push(value);
             }
         }
 
@@ -223,10 +285,13 @@ export class TestRunner {
         }
 
         // Finish with target folder or file for all runs (other than test suites)
-        if (args.has('--testsuite') === false) {
-            command = command + ' ' + targetPath;
+        if (argsPhpunit.has('--testsuite') === false) {
+            commandParts.push(targetPath);
         }
         this.logger.info(`Using PHPUnit target directory: ${targetPath}`);
+
+        // Build command string from parts
+        const command = commandParts.join(' ');
         this.logger.trace('Executing command to start test run: ' + command);
 
         // Set up handler for cancellation
@@ -254,6 +319,10 @@ export class TestRunner {
             } else {
                 this.logger.error(e);
             }
+        }
+
+        if (debug) {
+            vscode.debug.stopDebugging();
         }
         return results;
     }
