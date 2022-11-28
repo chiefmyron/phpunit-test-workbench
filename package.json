@@ -136,6 +136,18 @@
           "type": "string",
           "markdownDescription": "Suffix used to identify test files within the test directory. If left blank, the PHPUnit default suffixes (`Test.php` and `.phpt`) will be used.",
           "default": "Test.php,.phpt"
+        },
+        "phpunit-test-workbench.xdebug.clientPort": {
+          "scope": "resource",
+          "type": "integer",
+          "markdownDescription": "Default port to use for Xdebug connections, if a port is not defined in your selected debug launch configuration. Default is `9003`.",
+          "default": 9003
+        },
+        "phpunit-test-workbench.xdebug.clientHost": {
+          "scope": "resource",
+          "type": "string",
+          "markdownDescription": "Default hostname to use for Xdebug connections, if a host is not defined in your selected debug launch configuration. Default is `localhost`.",
+          "default": "localhost"
         }
       }
     },
