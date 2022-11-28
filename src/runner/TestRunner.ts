@@ -1,6 +1,7 @@
 import { exec } from 'child_process';
 import * as util from 'util';
 import * as vscode from 'vscode';
+import { TestRunResult } from './TestRunResult';
 import { TestRunResultItem, TestRunResultStatus } from './TestRunResultItem';
 import { TestRunResultParser } from './TestRunResultParser';
 import { Logger } from '../output';
@@ -46,7 +47,7 @@ export class TestRunner {
 
         // Get details of the first TestItem in the request (this should be the parent)
         let parentTestItem: vscode.TestItem;
-        let testRunResults: TestRunResultItem[] = [];
+        let testRunResults: TestRunResult = new TestRunResult();
         if (request.include) {
             // Run specific subset of tests
             parentTestItem = request.include[0]!;
@@ -92,7 +93,7 @@ export class TestRunner {
                 if (currentWorkspaceFolder && workspaceFolder !== currentWorkspaceFolder) {
                     // Execute any tests from the current workspace
                     let results = await this.runCommand(token, currentWorkspaceFolder, debug);
-                    testRunResults = testRunResults.concat(results);
+                    testRunResults.append(results);
                     runRequired = false;
                 } else {
                     // Set this as the current workspace folder and start building up the test run queue
@@ -105,12 +106,13 @@ export class TestRunner {
             // Clean up final run if required
             if (runRequired === true && currentWorkspaceFolder) {
                 let results = await this.runCommand(token, currentWorkspaceFolder, debug );
-                testRunResults = testRunResults.concat(results);
+                testRunResults.append(results);
             }
         }
     
         // Loop through test run results and set status and message for related TestItems
-        for (const result of testRunResults) {
+        this.logger.info('');
+        for (const result of testRunResults.getTestRunResultItems()) {
             let item = queue.get(result.getTestItemId());
             if (!item) {
                 continue;
@@ -175,7 +177,7 @@ export class TestRunner {
                     if (result.getMessageDetail().length > 0) {
                         message.appendMarkdown('\n' + resultMessageDetail);
                     }
-                    this.logger.error('➖ IGNORED: ' + displayId, {testItem: item});
+                    this.logger.info('➖ IGNORED: ' + displayId, {testItem: item});
                     run.skipped(item);
                     break;
             }
@@ -187,12 +189,16 @@ export class TestRunner {
         });
     
         // Mark the test run as complete
-        this.logger.info('Test run completed!');
+        this.logger.info('');
+        this.logger.info('-'.repeat(testRunResults.getTestRunSummary().length));
+        this.logger.info(testRunResults.getTestRunSummary());
+        this.logger.info('-'.repeat(testRunResults.getTestRunSummary().length));
+        this.logger.info('');
         this.logger.setTestRun(undefined);
         run.end();
     }
     
-    public async runCommand(token: vscode.CancellationToken, workspaceFolder: vscode.WorkspaceFolder, debug: boolean, target?: string, args?: {env?: Map<string, string>, php?: Map<string, string>, phpunit?: Map<string, string>}): Promise<TestRunResultItem[]> {
+    public async runCommand(token: vscode.CancellationToken, workspaceFolder: vscode.WorkspaceFolder, debug: boolean, target?: string, args?: {env?: Map<string, string>, php?: Map<string, string>, phpunit?: Map<string, string>}): Promise<TestRunResult> {
         // Set binary and config file locations
         await this.initPhpBinaryPath(this.settings.get('php.binaryPath', undefined, workspaceFolder));
         await this.initPhpUnitBinaryPath(workspaceFolder, this.settings.get('phpunit.binaryPath', undefined, workspaceFolder));
@@ -299,7 +305,7 @@ export class TestRunner {
         token.onCancellationRequested(e => abortController.abort());
 
         // Attempt to run command
-        let results: TestRunResultItem[] = [];
+        let results: TestRunResult = new TestRunResult();
         const parser = new TestRunResultParser(this.logger);
         try {
             const { stdout, stderr } = await cp_exec(command, { signal: abortController.signal });
