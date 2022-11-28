@@ -5,6 +5,12 @@ All notable changes to the "phpunit-test-workbench" extension will be documented
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] - 2022-11-28
+### Added
+- Include pertinent information in recorded test run output ([#34](https://github.com/chiefmyron/phpunit-test-workbench/issues/34))
+- Add test debug run profile ([#36](https://github.com/chiefmyron/phpunit-test-workbench/issues/36))
+- Include summary of test run in output ([#38](https://github.com/chiefmyron/phpunit-test-workbench/issues/38))
+
 ## [0.2.0] - 2022-10-19
 ### Added
 - Detect tests identified with the `@tests` docblock annotation ([#21](https://github.com/chiefmyron/phpunit-test-workbench/issues/21))
