@@ -17,8 +17,8 @@ const patternTestAttribDuration = new RegExp(/##teamcity.*duration='(.*?)'/);
 const patternTestAttribType = new RegExp(/##teamcity.*type='(.*?)'/);
 const patternTestAttribActual = new RegExp(/##teamcity.*actual='(.*?)'/);
 const patternTestAttribFlowId = new RegExp(/##teamcity.*flowId='(.*?)'/);
-const patternSummaryOk = new RegExp(/OK \((\d*) tests, (\d*) assertions/);
-const patternSummaryNotOk = new RegExp(/Tests: (\d*), Assertions: (\d*)/);
+const patternSummaryOk = new RegExp(/OK \((\d*) (test|tests), (\d*) (assertion|assertions)\)/);
+const patternSummaryNotOk = new RegExp(/(Test|Tests): (\d*), (Assertion|Assertions): (\d*)/);
 const patternSummaryNotOkSkipped = new RegExp(/Skipped: (\d*)/);
 const patternSummaryNotOkFailures = new RegExp(/Failures: (\d*)/);
 const patternSummaryNotOkErrors = new RegExp(/Errors: (\d*)/);
@@ -128,14 +128,14 @@ export class TestRunResultParser {
             // Check if the line is a test run summary (with no failures, errors or skipped tests)
             if (m = line.match(patternSummaryOk)) {
                 this.results.setNumTests(parseInt(m.at(1)!));
-                this.results.setNumAssertions(parseInt(m.at(2)!));
+                this.results.setNumAssertions(parseInt(m.at(3)!));
                 break;
             }
 
             // Check if the line is a test run summary (with one or more issues)
             if (m = line.match(patternSummaryNotOk)) {
-                this.results.setNumTests(parseInt(m.at(1)!));
-                this.results.setNumAssertions(parseInt(m.at(2)!));
+                this.results.setNumTests(parseInt(m.at(2)!));
+                this.results.setNumAssertions(parseInt(m.at(4)!));
 
                 // Check for skipped tests
                 if (m = line.match(patternSummaryNotOkSkipped)) {
