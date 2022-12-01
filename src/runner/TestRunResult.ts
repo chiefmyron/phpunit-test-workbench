@@ -75,8 +75,18 @@ export class TestRunResult {
     }
 
     public getTestRunSummary(): string {
-        let output = `Test run completed: ${this.numTests} tests, ${this.numAssertions} assertions`;
-
+        let output = `Test run completed: `;
+        
+        if (this.numTests === 1) {
+            output = output + `${this.numTests} test`;
+        } else {
+            output = output + `${this.numTests} tests`;
+        }
+        if (this.numAssertions === 1) {
+            output = output + `, ${this.numAssertions} assertion`;
+        } else {
+            output = output + `, ${this.numAssertions} assertions`;
+        }
         if (this.numSkipped > 0) {
             output = output + `, ${this.numSkipped} skipped`;
         }

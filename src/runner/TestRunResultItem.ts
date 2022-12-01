@@ -16,6 +16,8 @@ export class TestRunResultItem {
     private message: string | undefined;
     private messageDetail: string | undefined;
     private messageLineItem: number | undefined;
+    private testFailureType: string | undefined;
+    private actualValue: string | undefined;
     private duration: number;
 
     constructor(testItemId: string) {
@@ -92,5 +94,34 @@ export class TestRunResultItem {
 
     public setDuration(duration: number): void {
         this.duration = duration;
+    }
+
+    public getTestFailureType(): string {
+        if (this.testFailureType) {
+            return this.testFailureType;
+        }
+        return '';
+    }
+
+    public setTestFailureType(failureType: string | undefined): void {
+        this.testFailureType = failureType;
+    }
+
+    public getActualValue(): string {
+        if (this.actualValue) {
+            return this.actualValue;
+        }
+        return '';
+    }
+
+    public setActualValue(value: string | undefined): void {
+        if (value) {
+            // Replace linebreak characters and remove trailing spaces or linebreaks
+            value = value.trim();
+            value = value.replace(/\|n$/, '');
+            value = value.replace(/\|n/g, "\n");
+        }
+
+        this.actualValue = value;
     }
 }

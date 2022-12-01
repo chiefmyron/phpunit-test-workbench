@@ -140,13 +140,37 @@ export class TestRunner {
                         this.logger.showOutputChannel();
                     }
 
+                    // Check if the failure includes the actual value
+                    let resultActualValue = result.getActualValue();
+                    let resultFailureType = result.getTestFailureType();
+
                     // Format failure message
+                    message = new vscode.MarkdownString();
                     this.logger.error(`❌ FAILED: ${displayId}`);
                     this.logger.error(` - Failure reason: ${resultMessage}`);
-                    if (result.getMessageDetail().length > 0) {
+                    message.appendMarkdown(`### ${resultMessage}`);
+                    if (resultFailureType.length > 0) {
+                        this.logger.error(` - Failure type: ${resultFailureType}`);
+
+                        message.supportHtml = true;
+                        message.appendMarkdown('\n\n**Failure type:** `' + resultFailureType +'`');
+                    }
+                    if (resultActualValue.length > 0) {
+                        this.logger.error(` - Actual value: ${resultActualValue}`);
+
+                        message.supportHtml = true;
+                        message.appendMarkdown('  \n**Actual value:** ');
+                        let actualValuesLines = resultActualValue.split(new RegExp(/\n/g));
+                        if (actualValuesLines.length > 1) {
+                            message.appendMarkdown('<pre>' + resultActualValue + '</pre>');
+                        } else {
+                            message.appendMarkdown('`' + resultActualValue + '`');
+                        }
+                        
+                    }
+                    if (resultMessageDetail.length > 0) {
                         this.logger.error(` - Failure detail: ${resultMessageDetail}`);
                     }
-                    message = new vscode.MarkdownString('**' + resultMessage + '**');
                     run.failed(item, new vscode.TestMessage(message), result.getDuration());
 
                     // Add diagnostic to display error on correct line in editor
