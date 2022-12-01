@@ -5,10 +5,18 @@ import { generateTestItemId } from "../parser/TestFileParser";
 import { ItemType } from "../parser/TestItemDefinition";
 import { TestRunResult } from "./TestRunResult";
 
-const patternTestStarted = new RegExp(/##teamcity\[testStarted name='(.*)' locationHint='php_qn:\/\/(.*)' flowId='(.*)']/);
-const patternTestFailed = new RegExp(/##teamcity\[testFailed name='(.*)' message='(.*)' details='(.*)' duration='(\d*)' flowId='(.*)']/);
-const patternTestIgnored = new RegExp(/##teamcity\[testIgnored name='(.*)' message='(.*)' details='(.*)' duration='(\d*)' flowId='(.*)']/);
-const patternTestFinished = new RegExp(/##teamcity\[testFinished name='(.*)' duration='(\d*)' flowId='(.*)']/);
+const patternTestStarted = new RegExp(/##teamcity\[testStarted /);
+const patternTestFailed = new RegExp(/##teamcity\[testFailed /);
+const patternTestIgnored = new RegExp(/##teamcity\[testIgnored /);
+const patternTestFinished = new RegExp(/##teamcity\[testFinished /);
+const patternTestAttribName = new RegExp(/##teamcity.*name='(.*?)'/);
+const patternTestAttribLocationHint = new RegExp(/##teamcity.*locationHint='php_qn:\/\/(.*?)'/);
+const patternTestAttribMessage = new RegExp(/##teamcity.*message='(.*?)'/);
+const patternTestAttribDetails = new RegExp(/##teamcity.*details='(.*?)'/);
+const patternTestAttribDuration = new RegExp(/##teamcity.*duration='(.*?)'/);
+const patternTestAttribType = new RegExp(/##teamcity.*type='(.*?)'/);
+const patternTestAttribActual = new RegExp(/##teamcity.*actual='(.*?)'/);
+const patternTestAttribFlowId = new RegExp(/##teamcity.*flowId='(.*?)'/);
 const patternSummaryOk = new RegExp(/OK \((\d*) tests, (\d*) assertions/);
 const patternSummaryNotOk = new RegExp(/Tests: (\d*), Assertions: (\d*)/);
 const patternSummaryNotOkSkipped = new RegExp(/Skipped: (\d*)/);
@@ -31,15 +39,18 @@ export class TestRunResultParser {
 
         // Parse individual lines
         let result: TestRunResultItem | null = null;
-        for (const line of lines) {
+        for (let line of lines) {
+            // Fix escaped quote characters
+            line = line.replace(new RegExp(/\|'/g), "\"");
+
             // Parse line
             let m: RegExpMatchArray | null;
 
             // Check if line matches 'Test started' string
             if (m = line.match(patternTestStarted)) {
                 // Get test details
-                let testName = m.at(1);
-                let testLocationHint = m.at(2);
+                let testName = line.match(patternTestAttribName)?.at(1);
+                let testLocationHint = line.match(patternTestAttribLocationHint)?.at(1);
 
                 // Parse location hint to build up ID for test item
                 let testFilename = '';
@@ -63,10 +74,18 @@ export class TestRunResultParser {
 
             // Check if line matches 'Test failed' string
             if (m = line.match(patternTestFailed)) {
+                // Get test details and failure message
+                let testMessage = line.match(patternTestAttribMessage)?.at(1);
+                let testMessageDetail = line.match(patternTestAttribDetails)?.at(1);
+                let testFailureType = line.match(patternTestAttribType)?.at(1);
+                let testActualValue = line.match(patternTestAttribActual)?.at(1);
+
                 // Get failure detail
                 if (result) {
-                    result.setMessage(m.at(2));
-                    result.setMessageDetail(m.at(3));
+                    result.setMessage(testMessage);
+                    result.setMessageDetail(testMessageDetail);
+                    result.setTestFailureType(testFailureType);
+                    result.setActualValue(testActualValue);
                     result.setStatus(TestRunResultStatus.failed);
                 }
                 continue;
@@ -74,10 +93,14 @@ export class TestRunResultParser {
 
             // Check if line matches 'Test ignored' string
             if (m = line.match(patternTestIgnored)) {
+                // Get test details and failure message
+                let testMessage = line.match(patternTestAttribMessage)?.at(1);
+                let testMessageDetail = line.match(patternTestAttribDetails)?.at(1);
+                
                 // Get failure detail
                 if (result) {
-                    result.setMessage(m.at(2));
-                    result.setMessageDetail(m.at(3));
+                    result.setMessage(testMessage);
+                    result.setMessageDetail(testMessageDetail);
                     result.setStatus(TestRunResultStatus.ignored);
                 }
                 continue;
@@ -85,13 +108,18 @@ export class TestRunResultParser {
 
             // Check if line matches 'Test finished' string
             if (m = line.match(patternTestFinished)) {
+                // Get test details and duration
+                let testDuration = line.match(patternTestAttribDuration)?.at(1);
+                
                 // Add duration to existing result and add to results array
-                let duration = parseInt(m.at(2)!);
+                
                 if (result) {
                     if (result.getStatus() === TestRunResultStatus.unknown) {
                         result.setStatus(TestRunResultStatus.passed);
                     }
-                    result.setDuration(duration);
+                    if (testDuration) {
+                        result.setDuration(parseInt(testDuration));
+                    }
                     this.results.addTestRunResultItem(result);
                 }
                 continue;
