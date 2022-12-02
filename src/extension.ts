@@ -105,8 +105,8 @@ export function deactivate() {}
 
 async function initializeWorkspace(logger: Logger, testFileParser: TestFileParser) {
 	// Scan workspace folders for configuration files
-	logger.trace('Run initial configuration file discovery in workspace folders');
-	await testFileParser.setWorkspaceFileSystemWatchers();
+	logger.trace('Initialise workspace by reading configuration files and setting file system watchers');
+	await testFileParser.initializeWorkspace();
 
 	// Run initial test discovery on files already present in the workspace
 	logger.trace('Run initial test discovery against files already open in the workspace');

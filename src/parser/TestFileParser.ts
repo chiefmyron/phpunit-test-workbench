@@ -47,6 +47,7 @@ export class TestFileParser {
     private phpParser: Engine;
     private xmlParser: xml2js.Parser;
     private logger: Logger;
+    private watchers: vscode.FileSystemWatcher[];
 
     constructor(
         ctrl: vscode.TestController,
@@ -60,6 +61,7 @@ export class TestFileParser {
         this.testSuiteMap = testSuiteMap;
         this.settings = settings;
         this.logger = logger;
+        this.watchers = [];
 
         this.logger.trace('Creating new TestFileParser instance...');
         this.phpParser = Engine.create({
@@ -130,15 +132,14 @@ export class TestFileParser {
         this.testItemMap.delete(testItemId);
     }
 
-    /***********************************************************************/
-    /* Workspace file system watcher operations                            */
-    /***********************************************************************/
-
-    public async setWorkspaceFileSystemWatchers() {
+    public async initializeWorkspace() {
         // Handle the case of no open folders
         if (!vscode.workspace.workspaceFolders) {
-            return [];
+            return;
         }
+
+        // Clear any existing file system watchers before setting new ones
+        this.clearWorkspaceFileSystemWatchers();
 
         // Discover relevant files in all workspace folders
         return Promise.all(
@@ -149,11 +150,10 @@ export class TestFileParser {
 
                 // Add event handler to clean up test suites on config file delete
                 const configWatcher = vscode.workspace.createFileSystemWatcher(configPattern);
+                configWatcher.onDidCreate(configFileUri => this.parseConfigFileContents(workspaceFolder, configFileUri));
+                configWatcher.onDidChange(configFileUri => this.parseConfigFileContents(workspaceFolder, configFileUri));
                 configWatcher.onDidDelete(configFileUri => this.testSuiteMap.deleteConfigFileTestSuites(configFileUri));
-
-                // Add event handler to saved configuration files
-                // This should trigger a refresh of test files (as test suite definitions may have changed)
-                vscode.workspace.onDidSaveTextDocument(document => this.refreshTestFilesInWorkspace());
+                this.watchers.push(configWatcher);
 
                 // Parse configuration file immediately (this is required to retrieve test suite definitions, in case
                 // test methods are organised by suite - see below)
@@ -182,6 +182,10 @@ export class TestFileParser {
         );
     }
 
+    /***********************************************************************/
+    /* Workspace file system watcher operations                            */
+    /***********************************************************************/
+
     private async setFileSystemWatcherForPatterns(patterns: vscode.RelativePattern[], workspaceFolder: vscode.WorkspaceFolder, testSuite?: TestSuite) {
         for (let pattern of patterns) {
             // Set watcher for new, changed or deleted test files within the workspace
@@ -191,12 +195,17 @@ export class TestFileParser {
             watcher.onDidCreate(fileUri => this.parseTestFileContents(workspaceFolder, fileUri, testSuite));
             watcher.onDidChange(fileUri => this.parseTestFileContents(workspaceFolder, fileUri, testSuite));
             watcher.onDidDelete(fileUri => this.removeTestFile(fileUri.toString()));
+            this.watchers.push(watcher);
 
             // Find initial set of files for workspace
             for (const fileUri of await vscode.workspace.findFiles(pattern)) {
                 await this.parseTestFileContents(workspaceFolder, fileUri, testSuite);
             }
         }
+    }
+
+    public clearWorkspaceFileSystemWatchers() {
+        this.watchers.map(watcher => watcher.dispose());
     }
 
     /***********************************************************************/
@@ -211,7 +220,24 @@ export class TestFileParser {
         this.testSuiteMap.clear();
 
         // Parse files in all workspace folders
-        return this.parseTestFilesInWorkspace();
+        await this.initializeWorkspace();
+    }
+
+    public async parseConfigFilesInWorkspace() {
+        // Handle the case of no open folders
+        if (!vscode.workspace.workspaceFolders) {
+            return;
+        }
+
+        // Parse config files for each workspace folder
+        return Promise.all(
+            vscode.workspace.workspaceFolders.map(async workspaceFolder => {
+                // Get glob pattern definition for location of PHPUnit configuration files
+                const configPatternStr = this.getPhpUnitConfigXmlLocatorPattern(workspaceFolder);
+                const configPattern = new vscode.RelativePattern(workspaceFolder, configPatternStr);
+                await this.parseConfigFilesInWorkspaceFolder(workspaceFolder, configPattern);
+            })
+        );
     }
 
     public async parseTestFilesInWorkspace() {
@@ -220,14 +246,9 @@ export class TestFileParser {
             return;
         }
 
-        // Parse files for each workspace folder
+        // Parse test files for each workspace folder
         return Promise.all(
             vscode.workspace.workspaceFolders.map(async workspaceFolder => {
-                // Get glob pattern definition for location of PHPUnit configuration files
-                const configPatternStr = this.getPhpUnitConfigXmlLocatorPattern(workspaceFolder);
-                const configPattern = new vscode.RelativePattern(workspaceFolder, configPatternStr);
-                await this.parseConfigFilesInWorkspaceFolder(workspaceFolder, configPattern);
-
                 // Locate test methods. Depending on settings, tests could be identified by test suites defined in
                 // PHPUnit configuration files, or by a glob pattern
                 if (this.settings.get('phpunit.useTestSuiteDefinitions', false) === true) {
@@ -286,7 +307,7 @@ export class TestFileParser {
         if (this.settings.get('phpunit.useTestSuiteDefinitions', false, workspaceFolder) !== true) {
             let pattern = new vscode.RelativePattern(workspaceFolder, this.getTestLocatorPattern(workspaceFolder));
             if (vscode.languages.match({ pattern: pattern }, document) !== 0) {
-                this.parseTestFileContents(workspaceFolder, document.uri, undefined, document.getText());
+                this.parseTestFileContents(workspaceFolder, document, undefined, document.getText());
             }
             return;
         }
@@ -299,7 +320,7 @@ export class TestFileParser {
             let patterns = testSuite.getGlobsForTestSuiteItems(testSuffixGlob);
             for (let pattern of patterns) {
                 if (vscode.languages.match({ pattern: pattern }, document) !== 0) {
-                    this.parseTestFileContents(workspaceFolder, document.uri, testSuite, document.getText());
+                    this.parseTestFileContents(workspaceFolder, document, testSuite, document.getText());
                     return;
                 }
             }
@@ -312,14 +333,30 @@ export class TestFileParser {
     /* Test class parsing logic                                            */
     /***********************************************************************/
 
-    public async parseTestFileContents(workspaceFolder: vscode.WorkspaceFolder, testFileUri: vscode.Uri, testSuite?: TestSuite, testFileContents?: string) {
+    public async parseTestFileContents(workspaceFolder: vscode.WorkspaceFolder, testFile: vscode.Uri | vscode.TextDocument, testSuite?: TestSuite, testFileContents?: string) {
         const workspaceFolderUri = workspaceFolder.uri;
+        let testFileUri: vscode.Uri;
+        let testFileDocument: vscode.TextDocument;
+
+        // Set URI and TextDocument for the test file
+        if (testFile instanceof vscode.Uri) {
+            testFileUri = testFile;
+            testFileDocument = await vscode.workspace.openTextDocument(testFile);
+        } else {
+            testFileUri = testFile.uri;
+            testFileDocument = testFile;
+        }
 
         // Only need to parse actual source code files (prevents parsing of URIs with git scheme, for example)
         if (testFileUri.scheme !== 'file') {
             return;
         }
-        
+
+        // Check whether the file is 'dirty' (i.e. Do not parse files that are actively being edited)
+        if (testFileDocument.isDirty === true) {
+            return;
+        }
+
         // Check if we need to load file contents from disk
         this.logger.trace(`Parsing contents of file for test cases: ${testFileUri.toString()}`);
         if (!testFileContents) {
@@ -427,12 +464,6 @@ export class TestFileParser {
         if (!testSuiteTestItem) {
             // Create new TestItem for test suite
             testSuiteTestItem = this.ctrl.createTestItem(testSuiteId, testSuiteLabel, testSuite.getConfigFileUri());
-            // if (classNode.loc) {
-            //     classTestItem.range = new vscode.Range(
-            //         new vscode.Position(classNode.loc.start.line, classNode.loc.start.column),
-            //         new vscode.Position(classNode.loc.end.line, classNode.loc.end.column)
-            //     );
-            // }
             testSuiteTestItem.canResolveChildren = true;
             this.logger.trace('- Created new TestItem for test suite: ' + testSuiteId);
             this.ctrl.items.add(testSuiteTestItem);
@@ -576,52 +607,41 @@ export class TestFileParser {
     }
     
     private createClassTestItem(classNode: any, workspaceFolderUri: vscode.Uri, testFileUri: vscode.Uri, parentTestItem?: vscode.TestItem): vscode.TestItem {
+        // Create new TestItem for class
         let classId = generateTestItemId(ItemType.class, testFileUri);
         let classLabel = classNode.name.name;
-        
-        // Check if this already exists as a child of the parent item
-        let classTestItem = undefined;
-        if (parentTestItem) {
-            classTestItem = parentTestItem.children.get(classId);
-        } else {
-            classTestItem = this.ctrl.items.get(classId);
+        let classTestItem = this.ctrl.createTestItem(classId, classLabel, testFileUri);
+
+        // Set definition of class within the file
+        if (classNode.loc) {
+            classTestItem.range = new vscode.Range(
+                new vscode.Position((classNode.loc.start.line - 1), classNode.loc.start.column),
+                new vscode.Position((classNode.loc.end.line - 1), classNode.loc.end.column)
+            );
         }
+        classTestItem.canResolveChildren = true;
+        this.logger.trace('- Created new TestItem for class: ' + testFileUri.toString());
     
-        // If the class does not already exist, create it now
-        if (!classTestItem) {
-            // Create new TestItem for class
-            classTestItem = this.ctrl.createTestItem(classId, classLabel, testFileUri);
-            if (classNode.loc) {
-                classTestItem.range = new vscode.Range(
-                    new vscode.Position((classNode.loc.start.line - 1), classNode.loc.start.column),
-                    new vscode.Position((classNode.loc.end.line - 1), classNode.loc.end.column)
-                );
-            }
-            classTestItem.canResolveChildren = true;
-            this.logger.trace('- Created new TestItem for class: ' + testFileUri.toString());
-        
-            // Add new class TestItem as a child in the hierarchy
-            let testsuite = undefined;
-            let namespace = undefined;
-            if (parentTestItem) {
-                parentTestItem.children.add(classTestItem);
+        // Add new class TestItem as a child in the hierarchy
+        let testsuite = undefined;
+        let namespace = undefined;
+        if (parentTestItem) {
+            parentTestItem.children.add(classTestItem);
 
-                // Build fully-qualified class name from label and parent namespace test item, and use as the PHPUnit ID for the item
-                let parentTestItemDef = this.testItemMap.getTestItemDef(parentTestItem);
-                if (parentTestItemDef) {
-                    testsuite = parentTestItemDef.getTestSuite();
-                    namespace = parentTestItemDef.getNamespace();
-                }
-                
-            } else {
-                this.ctrl.items.add(classTestItem);
+            // Build fully-qualified class name from label and parent namespace test item, and use as the PHPUnit ID for the item
+            let parentTestItemDef = this.testItemMap.getTestItemDef(parentTestItem);
+            if (parentTestItemDef) {
+                testsuite = parentTestItemDef.getTestSuite();
+                namespace = parentTestItemDef.getNamespace();
             }
-
-            // Add to TestItem map
-            const classTestItemDef = new TestItemDefinition(ItemType.class, workspaceFolderUri, { testsuite: testsuite, namespace: namespace, classname: classLabel });
-            this.testItemMap.set(classTestItem, classTestItemDef);
+            
+        } else {
+            this.ctrl.items.add(classTestItem);
         }
-        
+
+        // Add to TestItem map
+        const classTestItemDef = new TestItemDefinition(ItemType.class, workspaceFolderUri, { testsuite: testsuite, namespace: namespace, classname: classLabel });
+        this.testItemMap.set(classTestItem, classTestItemDef);
         return classTestItem;
     }
 
@@ -653,8 +673,29 @@ export class TestFileParser {
     /* PHPUnit configuration file parsing logic                            */
     /***********************************************************************/
 
-    public async parseConfigFileContents(workspaceFolder: vscode.WorkspaceFolder, configFileUri: vscode.Uri, configFileContents?: string) {
+    public async parseConfigFileContents(workspaceFolder: vscode.WorkspaceFolder, configFile: vscode.Uri | vscode.TextDocument, configFileContents?: string) {
         const workspaceFolderUri = workspaceFolder.uri;
+        let configFileUri: vscode.Uri;
+        let configFileDocument: vscode.TextDocument;
+
+        // Set URI and TextDocument for the config file
+        if (configFile instanceof vscode.Uri) {
+            configFileUri = configFile;
+            configFileDocument = await vscode.workspace.openTextDocument(configFile);
+        } else {
+            configFileUri = configFile.uri;
+            configFileDocument = configFile;
+        }
+
+        // Only need to parse actual config files (prevents parsing of URIs with git scheme, for example)
+        if (configFileUri.scheme !== 'file') {
+            return;
+        }
+
+        // Check whether the file is 'dirty' (i.e. Do not parse files that are actively being edited)
+        if (configFileDocument.isDirty === true) {
+            return;
+        }
         
         // Check if we need to load file contents from disk
         this.logger.trace(`Parsing contents of file for configuration: ${configFileUri.toString()}`);
@@ -693,8 +734,6 @@ export class TestFileParser {
                                 suite.addFile(file);
                             }
                         }
-
-                        
                         this.testSuiteMap.set(suite);
                     }
                 }
@@ -712,5 +751,8 @@ export class TestFileParser {
             this.logger.warn(`Error message: ${e}`);
             return;
         }
+
+        // Parsing a configuration file should trigger reparsing of test files (as test suite definitions may have changed)
+        this.parseTestFilesInWorkspace();
     }
 }
