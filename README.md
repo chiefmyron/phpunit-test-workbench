@@ -58,6 +58,10 @@ An extension to integrate PHPUnit with the native Test Explorer functionality wi
 ![Execute tests via commands](docs/images/example-commands.gif)
 
 ## Release notes
+### v0.3.2 - 2022-12-02
+* __FIXED:__ New test added to Test Explorer on each keystroke instead of on file save ([#42](https://github.com/chiefmyron/phpunit-test-workbench/issues/42))
+* __FIXED:__ All test files being reparsed whenever any single test file is saved ([#43](https://github.com/chiefmyron/phpunit-test-workbench/issues/43))
+
 ### v0.3.1 - 2022-12-01
 * __FIXED:__ Some test failures not correctly detected by results parser ([#40](https://github.com/chiefmyron/phpunit-test-workbench/issues/40))
 
