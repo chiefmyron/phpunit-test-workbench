@@ -150,7 +150,7 @@ export class TestRunner {
                     this.logger.error(` - Failure reason: ${resultMessage}`);
                     message.appendMarkdown(`### ${resultMessage}`);
                     if (resultFailureType.length > 0) {
-                        this.logger.error(` - Failure type: ${resultFailureType}`);
+                        this.logger.error(`  - Failure type: ${resultFailureType}`);
 
                         message.supportHtml = true;
                         message.appendMarkdown('\n\n**Failure type:** `' + resultFailureType +'`');
@@ -201,7 +201,7 @@ export class TestRunner {
                     if (result.getMessageDetail().length > 0) {
                         message.appendMarkdown('\n' + resultMessageDetail);
                     }
-                    this.logger.info('➖ IGNORED: ' + displayId, {testItem: item});
+                    this.logger.info('➖ IGNORED: ' + displayId, false, {testItem: item});
                     run.skipped(item);
                     break;
             }

@@ -64,20 +64,32 @@ export class Logger {
         }
     }
 
-    public trace(message: string, params?: LogMessageParams) {
+    public trace(message: string, showDialog: boolean = false, params?: LogMessageParams) {
         this.log(LogLevel.trace, message, params);
+        if (showDialog) {
+            vscode.window.showInformationMessage(message);
+        }
     }
 
-    public info(message: string, params?: LogMessageParams) {
+    public info(message: string, showDialog: boolean = false, params?: LogMessageParams) {
         this.log(LogLevel.info, message, params);
+        if (showDialog) {
+            vscode.window.showInformationMessage(message);
+        }
     }
 
-    public warn(message: string, params?: LogMessageParams) {
+    public warn(message: string, showDialog: boolean = false, params?: LogMessageParams) {
         this.log(LogLevel.warning, message, params);
+        if (showDialog) {
+            vscode.window.showWarningMessage(message);
+        }
     }
 
-    public error(message: string, params?: LogMessageParams) {
+    public error(message: string, showDialog: boolean = false, params?: LogMessageParams) {
         this.log(LogLevel.error, message, params);
+        if (showDialog) {
+            vscode.window.showErrorMessage(message);
+        }
     }
 }
 
