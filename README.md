@@ -13,10 +13,12 @@ An extension to integrate PHPUnit with the native Test Explorer functionality wi
 * Errors appear as a peek within the editor
 * History of test run results and execution times is maintained
 * Includes commands and hotkeys to allow quick running of test or test suites
+* Debug test scripts using your existing debug profiles
 
 ## Requirements
 * __PHP:__ Version 7
 * __PHPUnit:__ Currently only tested on version 9
+* __XDebug:__ Version 3
 
 >PHP binary and PHPUnit must be installed on the environment where the tests are being run. 
 >
@@ -29,6 +31,10 @@ An extension to integrate PHPUnit with the native Test Explorer functionality wi
 |__PHPUnit: Run test class__|`phpunit-test-workbench.runClass`|If the active editor is for a test class, execute all test methods within the class.|
 |__PHPUnit: Run test suite__|`phpunit-test-workbench.runSuite`|Display a dialog allowing the user to select from the list of test suites found in configuration files. All test methods within the class will be executed.|
 |__PHPUnit: Run all tests__|`phpunit-test-workbench.runAll`|Run all tests identified in the Test Explorer|
+|__PHPUnit: Debug test method__|`phpunit-test-workbench.debugMethod`|If the cursor is located within a test method, execute only that test method using the debugger.|
+|__PHPUnit: Debug test class__|`phpunit-test-workbench.debugClass`|If the active editor is for a test class, debug all test methods within the class.|
+|__PHPUnit: Debug test suite__|`phpunit-test-workbench.debugSuite`|Display a dialog allowing the user to select from the list of test suites found in configuration files. All test methods within the class will be executed using the debugger.|
+|__PHPUnit: Debug all tests__|`phpunit-test-workbench.debugAll`|Debug all tests identified in the Test Explorer|
 
 ## Configuration options
 |Option|Description|
@@ -54,10 +60,16 @@ An extension to integrate PHPUnit with the native Test Explorer functionality wi
 ### Display of failed tests
 ![Display of failed tests](docs/images/example-failed-test-peek.gif)
 
+### Debugging test scripts
+![Debugging test scripts](docs/images/example-test-debugging.gif)
+
 ### Execute tests via commands
 ![Execute tests via commands](docs/images/example-commands.gif)
 
 ## Release notes
+### v0.3.3 - 2022-12-05
+* __FIXED:__ Missing commands for debugging tests ([#45](https://github.com/chiefmyron/phpunit-test-workbench/issues/45))
+
 ### v0.3.2 - 2022-12-02
 * __FIXED:__ New test added to Test Explorer on each keystroke instead of on file save ([#42](https://github.com/chiefmyron/phpunit-test-workbench/issues/42))
 * __FIXED:__ All test files being reparsed whenever any single test file is saved ([#43](https://github.com/chiefmyron/phpunit-test-workbench/issues/43))
