@@ -43,6 +43,22 @@
       {
         "command": "phpunit-test-workbench.runAll",
         "title": "PHPUnit: Run all tests"
+      },
+      {
+        "command": "phpunit-test-workbench.debugMethod",
+        "title": "PHPUnit: Debug test method"
+      },
+      {
+        "command": "phpunit-test-workbench.debugClass",
+        "title": "PHPUnit: Debug test class"
+      },
+      {
+        "command": "phpunit-test-workbench.debugSuite",
+        "title": "PHPUnit: Debug test suite"
+      },
+      {
+        "command": "phpunit-test-workbench.debugAll",
+        "title": "PHPUnit: Debug all tests"
       }
     ],
     "configuration": {
