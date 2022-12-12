@@ -127,9 +127,31 @@ export class TestFileParser {
         this.testItemMap.clear();
     }
 
-    public removeTestFile(testItemId: string) {
-        this.ctrl.items.delete(testItemId);
-        this.testItemMap.delete(testItemId);
+    public removeTestFile(testFileUri: vscode.Uri) {
+        // Find TestItem for the class defined in this file
+        let classTestItem = this.testItemMap.getTestItemForClass(testFileUri);
+        if (!classTestItem) {
+            return;
+        }
+
+        // Delete test item definitions for methods within the test class
+        classTestItem.children.forEach(methodTestItem => this.testItemMap.delete(methodTestItem));
+
+        // Delete test item for the class from its parent
+        let parentTestItem = classTestItem.parent;
+        if (parentTestItem) {
+            parentTestItem.children.delete(classTestItem.id);
+            if (parentTestItem.children.size <= 0) {
+                if (parentTestItem.parent) {
+                    parentTestItem.parent.children.delete(parentTestItem.id);
+                } else {
+                    this.ctrl.items.delete(parentTestItem.id);
+                }
+            }
+        } else {
+            this.ctrl.items.delete(classTestItem.id);
+        }
+        this.testItemMap.delete(classTestItem.id);
     }
 
     public async initializeWorkspace() {
@@ -194,7 +216,7 @@ export class TestFileParser {
             // Set file related event handlers
             watcher.onDidCreate(fileUri => this.parseTestFileContents(workspaceFolder, fileUri, testSuite));
             watcher.onDidChange(fileUri => this.parseTestFileContents(workspaceFolder, fileUri, testSuite));
-            watcher.onDidDelete(fileUri => this.removeTestFile(fileUri.toString()));
+            watcher.onDidDelete(fileUri => this.removeTestFile(fileUri));
             this.watchers.push(watcher);
 
             // Find initial set of files for workspace
@@ -403,7 +425,12 @@ export class TestFileParser {
         let classTestItem: any;
         if (this.settings.get('phpunit.testOrganization', 'file') === 'namespace') {
             // Verify or create hierarchy of namespace TestItems as parent nodes before creating the class test item
-            let namespaceTestItem = this.createNamespaceTestItems(namespaceNode, workspaceFolder, testFileUri, testSuiteTestItem);
+            let namespaceTestItem = await this.createNamespaceTestItems(namespaceNode, workspaceFolder, testFileUri, testSuiteTestItem);
+            if (!namespaceTestItem) {
+                // Class is now referencing an invalid namespace - remove any existing test class from the tree
+                this.removeTestFile(testFileUri);
+                return;
+            }
             classTestItem = this.createClassTestItem(classNode, workspaceFolderUri, testFileUri, namespaceTestItem);
         } else {
             // Create class test item as a root node
@@ -476,7 +503,7 @@ export class TestFileParser {
         return testSuiteTestItem;
     }
     
-    private createNamespaceTestItems(namespaceNode: any, workspaceFolder: vscode.WorkspaceFolder, namespaceFolderUri: vscode.Uri, parentTestItem?: vscode.TestItem): vscode.TestItem | undefined {
+    private async createNamespaceTestItems(namespaceNode: any, workspaceFolder: vscode.WorkspaceFolder, namespaceFolderUri: vscode.Uri, parentTestItem?: vscode.TestItem): Promise<vscode.TestItem | undefined> {
         let namespace: string = namespaceNode.name;
         let namespaceHierarchyRoot = parentTestItem;
 
@@ -537,11 +564,20 @@ export class TestFileParser {
 
         // Split the namespace into segments and traverse the hierarchy
         const namespaceParts = namespace.split('\\');
-        if (namespaceParts.length > 0) {
-            return this.traverseNamespaceHierarchy(workspaceFolder.uri, testDirectoryUri, namespaceParts, namespaceHierarchyRoot);
-        } else {
+        if (namespaceParts.length <= 0) {
             return parentTestItem;
         }
+
+        // Fix for #47: Check directory exists to map onto the namespace
+        try {
+            let namespaceDirectory = testDirectoryUri.with({ path: testDirectoryUri.path + '/' + namespaceParts.join('/')});
+            let namespaceDirectoryStats = await vscode.workspace.fs.stat(namespaceDirectory);
+        } catch (error) {
+            this.logger.error(`No directory could be found that maps to namespace '${namespace}'`);
+            return undefined;
+        }
+
+        return this.traverseNamespaceHierarchy(workspaceFolder.uri, testDirectoryUri, namespaceParts, namespaceHierarchyRoot);
     }
     
     private traverseNamespaceHierarchy(workspaceFolderUri: vscode.Uri, basePath: vscode.Uri, namespaceParts: string[], parentTestItem?: vscode.TestItem): vscode.TestItem {
@@ -610,9 +646,17 @@ export class TestFileParser {
         // Create new TestItem for class
         let classId = generateTestItemId(ItemType.class, testFileUri);
         let classLabel = classNode.name.name;
-        let classTestItem = this.ctrl.createTestItem(classId, classLabel, testFileUri);
+
+        // FIX FOR #47: If this class already exists as a child of a different parent (i.e. the namespace for the class has changed), remove it from the old parent
+        if (parentTestItem) {
+            let existingClassTestItem = this.testItemMap.getTestItem(classId);
+            if (existingClassTestItem && existingClassTestItem.parent && existingClassTestItem.parent.id !== parentTestItem.id) {
+                this.removeChildTestItemFromParent(existingClassTestItem);
+            }
+        }
 
         // Set definition of class within the file
+        let classTestItem = this.ctrl.createTestItem(classId, classLabel, testFileUri);
         if (classNode.loc) {
             classTestItem.range = new vscode.Range(
                 new vscode.Position((classNode.loc.start.line - 1), classNode.loc.start.column),
@@ -667,6 +711,19 @@ export class TestFileParser {
         this.testItemMap.set(methodTestItem, methodTestItemDef);
 
         return methodTestItem;
+    }
+
+    private removeChildTestItemFromParent(testItem: vscode.TestItem) {
+        if (!testItem.parent) {
+            return;
+        }
+
+        let testItemId = testItem.id;
+        let parentTestItem = testItem.parent;
+        testItem.parent.children.delete(testItemId);
+        if (parentTestItem.children.size <= 0) {
+            this.removeChildTestItemFromParent(parentTestItem);
+        }
     }
 
     /***********************************************************************/
