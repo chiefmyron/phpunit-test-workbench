@@ -67,6 +67,9 @@ An extension to integrate PHPUnit with the native Test Explorer functionality wi
 ![Execute tests via commands](docs/images/example-commands.gif)
 
 ## Release notes
+### v0.3.4 - 2022-12-12
+* __FIXED:__ Editing an existing test script does not not update location of shifted class and function 'run' icons ([#47](https://github.com/chiefmyron/phpunit-test-workbench/issues/47))
+
 ### v0.3.3 - 2022-12-05
 * __FIXED:__ Missing commands for debugging tests ([#45](https://github.com/chiefmyron/phpunit-test-workbench/issues/45))
 
