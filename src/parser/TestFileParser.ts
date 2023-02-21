@@ -400,15 +400,18 @@ export class TestFileParser {
             this.logger.warn('An error occurred while parsing the test file! Error message: ' + e);
             return;
         }
-    
+
         // Get the namespace for the test file
         const namespaceNode = this.findNamespaceNode(tree.children);
         if (!namespaceNode) {
            this.logger.info(`Unable to find namespace definition in test file: ${testFileUri.toString()}`);
         }
+
+        // Generate classmap for the test file imports
+        const namespaceChildNodes = namespaceNode ? namespaceNode.children : tree;
+        const classmap = this.createTestFileClassmap(namespaceChildNodes);
     
         // Get classes for the test file
-        const namespaceChildNodes = namespaceNode ? namespaceNode.children : tree;
         const classNode = this.findClassNode(namespaceChildNodes);
         if (!classNode) {
             this.logger.warn(`Unable to find class definition in test file: ${testFileUri.toString()}`);
@@ -438,11 +441,26 @@ export class TestFileParser {
         }
 
         // Create TestItems for test methods within the class
-        const methodNodes = this.findTestMethodNodes(classNode.body);
+        const methodNodes = this.findTestMethodNodes(classNode.body, classmap);
         methodNodes.map((methodNode: any) => {
             this.createMethodTestItem(methodNode, workspaceFolderUri, testFileUri, classTestItem);
         });
         this.logger.trace(`Finished parsing of test file: ${testFileUri.toString()}`);
+    }
+
+    private createTestFileClassmap(nodes: any[]): any {
+        const classmap = new Map<string, string>();
+        for (const node of nodes) {
+            if (node.kind === 'usegroup' && node.items.length > 0) {
+                const useitem = node.items[0];
+                if (useitem.alias) {
+                    classmap.set(useitem.name, useitem.alias.name);
+                } else {
+                    classmap.set(useitem.name, useitem.name);
+                }
+            }
+        }
+        return classmap;
     }
     
     private findNamespaceNode(nodes: any[]): any {
@@ -463,7 +481,7 @@ export class TestFileParser {
         return;
     }
         
-    private findTestMethodNodes(nodes: any[]): any[] {
+    private findTestMethodNodes(nodes: any[], classmap: Map<string, string>): any[] {
         return nodes.reduce((methods: any[], node: any) => {
             if (node.kind === 'method' && node.visibility === 'public') {
                 // Identify test methods starting with 'test'
@@ -474,6 +492,16 @@ export class TestFileParser {
                 // Identify test methods associated with an '@test' docblock annotation
                 if (node.leadingComments && node.leadingComments[0] && node.leadingComments[0].value.indexOf('@test', -1) > -1) {
                     return methods.concat(node);
+                }
+
+                // Identify test methods associated with a #[Test] attribute
+                if (node.attrGroups && node.attrGroups[0] && node.attrGroups[0].attrs.length > 0) {
+                    for (const attrib of node.attrGroups[0].attrs) {
+                        if (attrib.kind === 'attribute' && (attrib.name === 'PHPUnit\\Framework\\Attributes\\Test' || attrib.name === classmap.get('PHPUnit\\Framework\\Attributes\\Test'))) {
+                            return methods.concat(node);
+                        }
+                    }
+                
                 }
             }
             return methods;
