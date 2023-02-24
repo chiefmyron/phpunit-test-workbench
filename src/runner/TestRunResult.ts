@@ -1,4 +1,4 @@
-import { TestRunResultItem } from "./TestRunResultItem";
+import { TestRunResultItem, TestRunResultStatus } from "./TestRunResultItem";
 
 export class TestRunResult {
     private items: TestRunResultItem[] = [];
@@ -10,6 +10,14 @@ export class TestRunResult {
 
     public addTestRunResultItem(item: TestRunResultItem) {
         this.items.push(item);
+
+        let status = item.getStatus();
+        if (status === TestRunResultStatus.failed) {
+            this.setNumFailed(this.getNumFailed() + 1);
+        } else if (status === TestRunResultStatus.skipped || status === TestRunResultStatus.ignored) {
+            this.setNumSkipped(this.getNumSkipped() + 1);
+        }
+        this.setNumTests(this.getNumTests() + 1);
     }
 
     public getTestRunResultItems(): TestRunResultItem[] {
@@ -77,14 +85,16 @@ export class TestRunResult {
     public getTestRunSummary(): string {
         let output = `Test run completed: `;
         
-        if (this.numTests === 1) {
+        if (this.numTests <= 0) {
+            output = output + `No test summary information available.`;
+        } else if (this.numTests === 1) {
             output = output + `${this.numTests} test`;
         } else {
             output = output + `${this.numTests} tests`;
         }
         if (this.numAssertions === 1) {
             output = output + `, ${this.numAssertions} assertion`;
-        } else {
+        } else if (this.numAssertions > 1) {
             output = output + `, ${this.numAssertions} assertions`;
         }
         if (this.numSkipped > 0) {
