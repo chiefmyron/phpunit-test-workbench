@@ -1,7 +1,5 @@
-import { exec, spawn } from 'child_process';
+import { spawn } from 'child_process';
 import * as vscode from 'vscode';
-// import { TestRunResult } from './TestRunResult';
-// import { TestRunResultStatus } from './TestRunResultItem';
 import { TestRunResultParser } from './TestRunResultParser';
 import { Logger } from '../output';
 import { ItemType } from '../parser/TestItemDefinition';
@@ -10,6 +8,7 @@ import { TestItemMap } from '../parser/TestItemMap';
 import { parseTestItemId } from '../parser/TestFileParser';
 import { DebugConfigQuickPickItem } from '../ui/DebugConfigQuickPickItem';
 import { TestExecutionRequest } from './TestExecutionRequest';
+import { TestRunResult } from './TestRunResult';
 
 export class TestRunner {
     private ctrl: vscode.TestController;
@@ -192,32 +191,51 @@ export class TestRunner {
             this.logger.error('stderr: ' + data);
         });
 
-        // Clean up when child process has completed execution
+        // Clean up when parser has finished processing 
         return new Promise(resolve => {
             child.on('close', (code) => {
                 this.logger.trace('Child process completed with exit code: ' + code);
-    
-                // Print execution summary to logs
-                let results = parser.getResults();
-                this.logger.info('');
-                this.logger.info('-'.repeat(results.getTestRunSummary().length));
-                this.logger.info(results.getTestRunSummary());
-                this.logger.info('-'.repeat(results.getTestRunSummary().length));
-                this.logger.info('');
     
                 // If test execution was running in debug mode, stop debugging on completion 
                 if (debug) {
                     vscode.debug.stopDebugging();
                 }
+    
+                if (parser.isParsing() === false) {
+                    // Print execution summary to logs
+                    this.logTestRunSummary(parser.getResults());
+                    resolve(parser.getResults());
+                }
+            });
 
-                resolve(results);
+            parser.onParsingComplete((event) => {
+                this.logger.trace('Message parser completed processing queue');
+
+                // Only print out summary and resolve if the child process has also finished running
+                // (There may be situations where the parser runs out of messages to parse but the script
+                // is still running)
+                if (child.exitCode) {
+                    // Print execution summary to logs
+                    this.logTestRunSummary(event.results);
+                    resolve(event.results);
+                }
             });
         });
     }
 
+    private logTestRunSummary(results: TestRunResult) {
+        this.logger.info('');
+        this.logger.info('-'.repeat(results.getTestRunSummary().length));
+        this.logger.info(results.getTestRunSummary());
+        this.logger.info('-'.repeat(results.getTestRunSummary().length));
+        this.logger.info('');
+    }
+
     private buildTestRunQueue(run: vscode.TestRun, queue: Map<string, vscode.TestItem>, item: vscode.TestItem): Map<string, vscode.TestItem> {
         // Mark the test as running
-        run.enqueued(item);
+        if (item.canResolveChildren === false) {
+            run.enqueued(item);
+        }
         
         // Add to the queue for later lookup by ID
         queue.set(item.id, item);

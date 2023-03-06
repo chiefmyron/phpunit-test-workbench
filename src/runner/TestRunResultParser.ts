@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import { Logger } from "../output";
 import { generateTestItemId } from "../parser/TestFileParser";
 import { ItemType } from "../parser/TestItemDefinition";
+import { ResultParsingCompleteEvent } from './events/ResultParsingCompleteEvent';
 import { TestRunResult } from "./TestRunResult";
 import { TestRunResultItem, TestRunResultStatus } from "./TestRunResultItem";
 
@@ -23,31 +24,94 @@ const patternSummaryNotOkFailures = new RegExp(/Failures: (\d*)/);
 const patternSummaryNotOkErrors = new RegExp(/Errors: (\d*)/);
 const patternFatalError = new RegExp(/Fatal error: (.*)/);
 
-export class TestRunResultParser {
+export class TestRunResultParser extends vscode.EventEmitter<any> {
     private run: vscode.TestRun;
-    private queue: Map<string, vscode.TestItem>;
+    private testItemQueue: Map<string, vscode.TestItem>;
     private logger: Logger;
+    private messageQueue: string[];
     private result: TestRunResultItem | undefined;
     private results: TestRunResult;
+    private buffer: string;
+    private counter: number;
+    private _isParsing: boolean;
+    private _onParsingComplete: vscode.EventEmitter<ResultParsingCompleteEvent>;
 
     constructor(run: vscode.TestRun, queue: Map<string, vscode.TestItem>, logger: Logger) {
+        super();
+
         this.run = run;
-        this.queue = queue;
+        this.testItemQueue = queue;
         this.logger = logger;
+        this.messageQueue = [];
         this.results = new TestRunResult();
+        this.buffer = '';
+        this.counter = 0;
+        this._isParsing = false;
+        this._onParsingComplete = new vscode.EventEmitter<ResultParsingCompleteEvent>();
+    }
+
+    get onParsingComplete(): vscode.Event<ResultParsingCompleteEvent> {
+        return this._onParsingComplete.event;
+    }
+
+    private enqueue(contents: string): void {
+        this.messageQueue.push(contents);
+    }
+
+    private dequeue(): string | undefined {
+        return this.messageQueue.shift();
+    }
+
+    private processMessageQueue() {
+        this._isParsing = true;
+        while (this.messageQueue.length > 0) {
+            let content = this.dequeue();
+            if (content) {
+                this.parseContent(content);
+            }
+        }
+        this._isParsing = false;
+        this._onParsingComplete.fire(
+            new ResultParsingCompleteEvent(this.results)
+        );
     }
 
     public reset(): void {
         this.results.reset();
+        this.messageQueue = [];
+    }
+
+    public isParsing(): boolean {
+        return this._isParsing;
     }
 
     public parse(contents: string): void {
-        const lines: string[] = contents.split(/\r\n|\r|\n/g);
+        this.enqueue(contents);
+        if (this._isParsing === false) {
+            this.processMessageQueue();
+        }
+    }
+
+    private parseContent(contents: string): void {
+        // If the buffer is not empty, append to existing content
+        if (this.buffer.length > 0) {
+            contents = this.buffer + contents;
+            this.buffer = '';
+        }
 
         // Parse individual lines
+        const lines: string[] = contents.split(/\r\n|\r|\n/g);
         for (let line of lines) {
             // Fix escaped quote characters
             line = line.replace(new RegExp(/\|'/g), "\"");
+
+            // Teamcity lines should start with '##' and finish with a closing ']'. If a teamcity line 
+            // isn't completed correctly, it must only be partially printed - add to the buffer and
+            // parse the complete line the next time around
+            if (line.startsWith('#') === true && line.endsWith(']') !== true) {
+                this.buffer = this.buffer + line;
+                break;
+            }
 
             // Parse line
             let m: RegExpMatchArray | null;
@@ -114,22 +178,19 @@ export class TestRunResultParser {
         let testLocationHint = line.match(patternTestAttribLocationHint)?.at(1);
 
         // Parse location hint to build up ID for test item
-        let testFilename = '';
-        let testClassName = '';
-        let testMethodName = '';
         let testLocationHintParts = testLocationHint?.split('::');
         let testRunResultItem: TestRunResultItem | undefined;
         if (testLocationHintParts) {
-            testFilename = testLocationHintParts[0];
-            testClassName = testLocationHintParts[1];
-            testMethodName = testLocationHintParts[2];
+            let testFilename = testLocationHintParts[0];
+            let testClassName = testLocationHintParts[1];
+            let testMethodName = testLocationHintParts[2];
 
             // Convert test filename into a URI
             let testFilenameUri = vscode.Uri.file(testFilename);
             
             // Create new test run result item to store result
             let testId = generateTestItemId(ItemType.method, testFilenameUri, testMethodName);
-            let testItem = this.queue.get(testId);
+            let testItem = this.testItemQueue.get(testId);
             if (testItem) {
                 // Create result item to track results for this test
                 testRunResultItem = new TestRunResultItem(testItem);
@@ -137,7 +198,12 @@ export class TestRunResultParser {
 
                 // Update the test run to indicate the test has started
                 this.run.started(testItem);
+                this.counter++;
+            } else {
+                this.logger.warn('Unable to find test item for test: ' + testId);
             }
+        } else {
+            this.logger.warn('Unable to parse test location hint: ' + testLocationHint);
         }
         return testRunResultItem;
     }
