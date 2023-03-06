@@ -1,5 +1,8 @@
+import * as vscode from 'vscode';
+
 export enum TestRunResultStatus {
     unknown,
+    started,
     passed,
     skipped,
     incomplete,
@@ -12,7 +15,7 @@ export enum TestRunResultStatus {
 
 export class TestRunResultItem {
     private status: TestRunResultStatus;
-    private testItemId: string;
+    private testItem: vscode.TestItem;
     private message: string | undefined;
     private messageDetail: string | undefined;
     private messageLineItem: number | undefined;
@@ -20,15 +23,41 @@ export class TestRunResultItem {
     private actualValue: string | undefined;
     private duration: number;
 
-    constructor(testItemId: string) {
-        this.testItemId = testItemId;
+    constructor(testItem: vscode.TestItem) {
+        this.testItem = testItem;
         this.status = TestRunResultStatus.unknown;
         this.duration = 0;
     }
 
+    public setStarted() {
+        this.setStatus(TestRunResultStatus.started);
+    }
+
+    public setFailed(message?: string, messageDetail?: string, failureType?: string, actualValue?: string): void {
+        this.setMessage(message);
+        this.setMessageDetail(messageDetail);
+        this.setTestFailureType(failureType);
+        this.setActualValue(actualValue);
+        this.setStatus(TestRunResultStatus.failed);
+    }
+
+    public setIgnored(message?: string, messageDetail?: string) {
+        this.setMessage(message);
+        this.setMessageDetail(messageDetail);
+        this.setStatus(TestRunResultStatus.ignored);
+    }
+
+    public setPassed() {
+        this.setStatus(TestRunResultStatus.passed);
+    }
+
+    public getTestItem(): vscode.TestItem {
+        return this.testItem;
+    }
+
     public getTestItemId(): string
     {
-        return this.testItemId;
+        return this.testItem.id;
     }
     
     public getStatus(): TestRunResultStatus {
@@ -123,5 +152,27 @@ export class TestRunResultItem {
         }
 
         this.actualValue = value;
+    }
+
+    public getTestMessage(): vscode.TestMessage {
+        let message = new vscode.MarkdownString();
+        message.appendMarkdown(`### ${this.message}`);
+        if (this.testFailureType && this.testFailureType.length > 0) {
+            message.supportHtml = true;
+            message.appendMarkdown('\n\n**Failure type:** `' + this.testFailureType +'`');
+        }
+        if (this.actualValue && this.actualValue.length > 0) {
+            let actualValuesLines = this.actualValue.split(new RegExp(/\n/g));
+
+            message.supportHtml = true;
+            message.appendMarkdown('  \n**Actual value:** ');
+            if (actualValuesLines.length > 1) {
+                message.appendMarkdown('<pre>' + this.actualValue + '</pre>');
+            } else {
+                message.appendMarkdown('`' + this.actualValue + '`');
+            }
+        }
+
+        return new vscode.TestMessage(message);
     }
 }
