@@ -3,11 +3,11 @@
 import * as vscode from 'vscode';
 import { Settings } from './settings';
 import { Logger } from './output';
-import { TestFileParser } from './parser/TestFileParser';
-import { TestItemMap } from './parser/TestItemMap';
-import { TestSuiteMap } from './suites/TestSuiteMap';
+import { TestItemMap } from './loader/tests/TestItemMap';
+import { TestSuiteMap } from './loader/suites/TestSuiteMap';
 import { CommandHandler } from './ui/CommandHandler';
 import { TestRunner } from './runner/TestRunner';
+import { TestFileLoader } from './loader/TestFileLoader';
 
 // this method is called when your extension is activated
 // your extension is activated the very first time the command is executed
@@ -28,7 +28,7 @@ export function activate(context: vscode.ExtensionContext) {
 	logger.trace('Creating test file parser');
 	const testItemMap = new TestItemMap();
 	const testSuiteMap = new TestSuiteMap();
-	const testFileParser = new TestFileParser(ctrl, testItemMap, testSuiteMap, settings, logger);
+	const testFileLoader = new TestFileLoader(ctrl, testItemMap, testSuiteMap, settings, logger);
 
 	// Create diagnostic collection (for displaying test failures as hovers in editors)
 	const diagnosticCollection = vscode.languages.createDiagnosticCollection('php');
@@ -40,25 +40,25 @@ export function activate(context: vscode.ExtensionContext) {
 
 	// Create command handler
 	logger.trace(`Creating command handler`);
-	const commandHandler = new CommandHandler(ctrl, testFileParser, testItemMap, runner, settings, logger);
+	const commandHandler = new CommandHandler(testFileLoader, testItemMap, runner, logger);
 
 	// Refresh handler
 	ctrl.refreshHandler = async () => {
 		diagnosticCollection.clear();
-		await testFileParser.refreshTestFilesInWorkspace();
+		testFileLoader.resetWorkspace();
 	};
 
 	// Resolve handler
 	ctrl.resolveHandler = async item => {
 		if (!item) {
 			// We are being asked to discover all tests for the workspace
-			await testFileParser.parseTestFilesInWorkspace();
+			await testFileLoader.parseWorkspaceTestFiles();
 		} else {
 			// We are being asked to resolve children for the supplied TestItem
 			try {
 				if (item.uri && item.uri.scheme === 'file') {
 					let document = await vscode.workspace.openTextDocument(item.uri);
-					await testFileParser.parseOpenDocument(document);
+					await testFileLoader.parseTestDocument(document);
 				}
 			} catch (e) { }
 		}
@@ -92,13 +92,13 @@ export function activate(context: vscode.ExtensionContext) {
 
 	// Register event handlers
 	context.subscriptions.push(
-		vscode.workspace.onDidChangeConfiguration(e => updateConfigurationSettings(settings, testFileParser)),
-		vscode.workspace.onDidOpenTextDocument(document => testFileParser.parseOpenDocument(document)),
-		vscode.workspace.onDidChangeTextDocument(e => testFileParser.parseOpenDocument(e.document))
+		vscode.workspace.onDidChangeConfiguration(e => updateConfigurationSettings(settings, testFileLoader)),
+		vscode.workspace.onDidOpenTextDocument(document => testFileLoader.parseOpenDocument(document)),
+		vscode.workspace.onDidChangeTextDocument(e => testFileLoader.parseOpenDocument(e.document))
 	);
 
 	// Initialize workspace by scanning for configuration files and parsing currently open documents for tests
-	initializeWorkspace(logger, testFileParser);
+	initializeWorkspace(logger, testFileLoader);
 
 	logger.trace('Extension "phpunit-test-workbench" activated!');
 	logger.trace('');
@@ -107,21 +107,21 @@ export function activate(context: vscode.ExtensionContext) {
 // this method is called when your extension is deactivated
 export function deactivate() {}
 
-async function initializeWorkspace(logger: Logger, testFileParser: TestFileParser) {
+async function initializeWorkspace(logger: Logger, testFileLoader: TestFileLoader) {
 	// Scan workspace folders for configuration files
 	logger.trace('Initialise workspace by reading configuration files and setting file system watchers');
-	await testFileParser.initializeWorkspace();
+	await testFileLoader.initializeWorkspace();
 
 	// Run initial test discovery on files already present in the workspace
 	logger.trace('Run initial test discovery against files already open in the workspace');
 	for (const doc of vscode.workspace.textDocuments) {
-		testFileParser.parseOpenDocument(doc);
+		testFileLoader.parseOpenDocument(doc);
 	}
 }
 
-async function updateConfigurationSettings(settings: Settings, testFileParser: TestFileParser) {
+async function updateConfigurationSettings(settings: Settings, testFileLoader: TestFileLoader) {
 	// Refresh configuration object with new settings and refresh files found in the workspace
 	// (setting changes may affect the way TestItem objects are discovered and/or organized)
 	settings.refresh();
-	await testFileParser.refreshTestFilesInWorkspace();
+	await testFileLoader.resetWorkspace();
 }

@@ -1,7 +1,6 @@
 import * as vscode from 'vscode';
 
 export class TestSuite {
-    private workspaceFolderUri: vscode.Uri;
     private configFileUri: vscode.Uri;
     private configDirectoryUri: vscode.Uri;
     private name: string;
@@ -9,8 +8,7 @@ export class TestSuite {
     private directories: string[];
     private directoryTestFileSuffixMap: Map<string, string>;
 
-    constructor(workspaceFolderUri: vscode.Uri, configFileUri: vscode.Uri, name: string) {
-        this.workspaceFolderUri = workspaceFolderUri;
+    constructor(configFileUri: vscode.Uri, name: string) {
         this.configFileUri = configFileUri;
         this.name = name;
         this.files = [];
@@ -21,14 +19,6 @@ export class TestSuite {
         let configFileDirParts = configFileUri.path.split('/');
         configFileDirParts.pop(); // Remove config filename
         this.configDirectoryUri = configFileUri.with({ path: configFileDirParts.join('/') });
-    }
-
-    public getWorkspaceFolder(): vscode.WorkspaceFolder | undefined {
-        return vscode.workspace.getWorkspaceFolder(this.workspaceFolderUri);
-    }
-
-    public getWorkspaceFolderUri(): vscode.Uri {
-        return this.workspaceFolderUri;
     }
 
     public getConfigFileUri(): vscode.Uri {
