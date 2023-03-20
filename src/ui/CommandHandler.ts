@@ -1,32 +1,25 @@
 import * as vscode from 'vscode';
-import { Settings } from "../settings";
 import { Logger } from "../output";
-import { TestFileParser } from '../parser/TestFileParser';
-import { TestItemMap } from '../parser/TestItemMap';
-import { TestRunner } from "../runner/TestRunner";
 import { TestItemQuickPickItem } from './TestItemQuickPickItem';
+import { TestFileLoader } from '../loader/TestFileLoader';
+import { TestItemMap } from '../loader/tests/TestItemMap';
+import { TestRunner } from "../runner/TestRunner";
 
 export class CommandHandler {
-    private ctrl: vscode.TestController;
-    private parser: TestFileParser;
+    private loader: TestFileLoader;
     private itemMap: TestItemMap;
     private runner: TestRunner;
-    private settings: Settings;
     private logger: Logger;
 
     constructor(
-        ctrl: vscode.TestController,
-        parser: TestFileParser,
+        loader: TestFileLoader,
         itemMap: TestItemMap,
         runner: TestRunner,
-        settings: Settings,
         logger: Logger
     ) {
-        this.ctrl = ctrl;
-        this.parser = parser;
+        this.loader = loader;
         this.itemMap = itemMap;
         this.runner = runner;
-        this.settings = settings;
         this.logger = logger;
     }
 
@@ -60,21 +53,10 @@ export class CommandHandler {
                     return;
                 }
 
-                // Find test item definition for the document
-                let classTestItem = this.itemMap.getTestItemForClass(editor.document.uri);
-                if (!classTestItem) {
-                    this.logger.warn(`No test item definition was found for the current class. Aborting test run.`, true);
-                    return;
-                }
-
-                // Find the closest method name above the location of the cursor
-                for (let [id, methodTestItem] of classTestItem.children) {
-                    if (methodTestItem.range && methodTestItem.range.contains(editor.selection.active)) {
-                        testItem = methodTestItem;
-                    }
-                }
+                // Find test item definition for a method at the current cursor position
+                testItem = this.itemMap.getMethodTestItem(editor.document.uri, editor.selection.active);
                 if (!testItem) {
-                    this.logger.warn(`No test item definition was found at the current cursor location. Aborting test run.`, true);
+                    this.logger.warn(`Unable to find a test item definition for a method at the current cursor position. Aborting test run.`, true);
                     return;
                 }
 
@@ -98,10 +80,10 @@ export class CommandHandler {
                     return;
                 }
 
-                // Find test item definition for the document
-                testItem = this.itemMap.getTestItemForClass(editor.document.uri);
+                // Find test item definition for a class at the current cursor position
+                testItem = this.itemMap.getClassTestItem(editor.document.uri, editor.selection.active);
                 if (!testItem) {
-                    this.logger.warn(`No test item definition was found for the current class. Aborting test run.`, true);
+                    this.logger.warn(`Unable to find a test item definition for a class at the current cursor position. Aborting test run.`, true);
                     return;
                 }
                 
@@ -123,7 +105,7 @@ export class CommandHandler {
                 let options: vscode.QuickPickItem[] = [];
                 for (let testItem of this.itemMap.getTestSuites()) {
                     let testItemDef = this.itemMap.getTestItemDef(testItem)!;
-                    options.push(new TestItemQuickPickItem(testItem.id, testItemDef.getTestSuite(), testItem.uri!.fsPath));
+                    options.push(new TestItemQuickPickItem(testItem.id, testItemDef.getTestSuiteName()!, testItem.uri!.fsPath));
                 }
 
                 // Build quick pick to display known TestSuites
@@ -161,7 +143,7 @@ export class CommandHandler {
                 this.logger.info(`Running command: ${commandTypeDesc} all tests...`);
 
                 // Ensure all test files have been parsed before starting the run
-                await this.parser.refreshTestFilesInWorkspace();
+                await this.loader.parseWorkspaceTestFiles();
 
                 // Create test run request
                 request = new vscode.TestRunRequest();

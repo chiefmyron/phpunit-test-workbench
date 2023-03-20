@@ -1,14 +1,15 @@
 import { spawn } from 'child_process';
 import * as vscode from 'vscode';
-import { TestRunResultParser } from './TestRunResultParser';
-import { Logger } from '../output';
-import { ItemType } from '../parser/TestItemDefinition';
 import { Settings } from '../settings';
-import { TestItemMap } from '../parser/TestItemMap';
-import { parseTestItemId } from '../parser/TestFileParser';
-import { DebugConfigQuickPickItem } from '../ui/DebugConfigQuickPickItem';
+import { Logger } from '../output';
+import { TestRunResultParser } from './TestRunResultParser';
 import { TestExecutionRequest } from './TestExecutionRequest';
 import { TestRunResult } from './TestRunResult';
+import { parseTestItemId } from '../loader/tests/TestFileParser';
+import { ItemType } from '../loader/tests/TestItemDefinition';
+import { TestItemMap } from '../loader/tests/TestItemMap';
+import { DebugConfigQuickPickItem } from '../ui/DebugConfigQuickPickItem';
+import { TestRunResultStatus } from './TestRunResultItem';
 
 export class TestRunner {
     private ctrl: vscode.TestController;
@@ -51,30 +52,26 @@ export class TestRunner {
 
             // Get the workspace folder and settings for the parent test
             let parentTestItemDef = this.itemMap.getTestItemDef(parentTestItem)!;
-            let workspaceFolder = vscode.workspace.getWorkspaceFolder(parentTestItemDef!.getWorkspaceFolderUri());
+            let workspaceFolder = vscode.workspace.getWorkspaceFolder(parentTestItem.uri!);
             if (!workspaceFolder) {
                 this.logger.warn(`Unable to locate workspace folder for ${parentTestItemDef.getWorkspaceFolderUri()}`);
                 return;
             }
             let testExecutionRequest = new TestExecutionRequest(this.settings, workspaceFolder, this.logger);
 
-            // Parse details encoded in test item ID
-            let testItemParts = parseTestItemId(parentTestItem.id);
-    
             // Determine whether we are running for a folder, class or method within a class
             if (parentTestItemDef.getType() === ItemType.namespace) {
                 testExecutionRequest.setTargetClassOrFolder(parentTestItem.uri!);
             } else if (parentTestItemDef.getType() === ItemType.class) {
                 testExecutionRequest.setTargetClassOrFolder(parentTestItem.uri!);
             } else if (parentTestItemDef.getType() === ItemType.method) {
-                testExecutionRequest.setArgPhpUnit('--filter', '\'' + parentTestItemDef.getPhpUnitId().replace(/\\/g, "\\\\") + '\'');
-                if (parentTestItemDef.getTestSuite().length > 0) {
-                    testExecutionRequest.setArgPhpUnit('--testsuite', `"${parentTestItemDef.getTestSuite()}"`);
-                }
-            } else if (parentTestItemDef.getType() === ItemType.testsuite) {
-                if (testItemParts && testItemParts.name) {
-                    testExecutionRequest.setArgPhpUnit('--testsuite', `"${parentTestItemDef.getTestSuite()}"`);
-                }
+                testExecutionRequest.setArgPhpUnit('--filter', `${parentTestItemDef.getMethodName()}$`);
+                testExecutionRequest.setTargetClassOrFolder(parentTestItem.uri!);
+            }
+
+            // If the test queue is being run under a test suite
+            if (parentTestItemDef.getTestSuiteName()) {
+                testExecutionRequest.setArgPhpUnit('--testsuite', `${parentTestItemDef.getTestSuiteName()}`);
             }
 
             // Add to the list of test executions to be run
@@ -84,8 +81,7 @@ export class TestRunner {
             let executionRequired: boolean = false;
             let currentWorkspaceFolder: vscode.WorkspaceFolder | undefined;
             for (let [key, item] of this.ctrl.items) {
-                let itemDef = this.itemMap.getTestItemDef(item);
-                let workspaceFolder = vscode.workspace.getWorkspaceFolder(itemDef!.getWorkspaceFolderUri());
+                let workspaceFolder = vscode.workspace.getWorkspaceFolder(item.uri!);
                 if (currentWorkspaceFolder && workspaceFolder !== currentWorkspaceFolder) {
                     // Execute any tests from the current workspace
                     executionRequests.push(new TestExecutionRequest(this.settings, currentWorkspaceFolder, this.logger));
@@ -107,7 +103,13 @@ export class TestRunner {
         // Dispatch each of the test execution requests in sequence
         for (let executionRequest of executionRequests) {
             if (cancel.isCancellationRequested !== true) {
-                await this.dispatchExecutionRequest(run, executionRequest, cancel, debug);
+                let results: TestRunResult = await this.dispatchExecutionRequest(run, executionRequest, cancel, debug);
+
+                // Print execution summary to logs
+                this.logTestRunSummary(results);
+
+                // Add diagnostics to source code
+                this.logFailuresAsDiagnostics(results, executionRequest.getWorkspaceFolder());
             }
         }
 
@@ -116,7 +118,7 @@ export class TestRunner {
         run.end();
     }
 
-    private async dispatchExecutionRequest(run: vscode.TestRun, request: TestExecutionRequest, cancel: vscode.CancellationToken, debug: boolean = false) {
+    private async dispatchExecutionRequest(run: vscode.TestRun, request: TestExecutionRequest, cancel: vscode.CancellationToken, debug: boolean = false): Promise<TestRunResult> {
         let workspaceFolder = request.getWorkspaceFolder();
         
         // If test run is being debugged, prompt user to select debug configuration
@@ -170,7 +172,7 @@ export class TestRunner {
         cancel.onCancellationRequested(e => abortController.abort());
 
         // Set up parser to capture test results and update TestItems
-        let parser = new TestRunResultParser(run, this.testItemQueue, this.logger);
+        let parser = new TestRunResultParser(run, this.testItemQueue, this.settings, this.logger);
 
         // Attempt to run command
         // For a good explanation of why we can set event listners after spawning the 
@@ -202,8 +204,6 @@ export class TestRunner {
                 }
     
                 if (parser.isParsing() === false) {
-                    // Print execution summary to logs
-                    this.logTestRunSummary(parser.getResults());
                     resolve(parser.getResults());
                 }
             });
@@ -215,8 +215,6 @@ export class TestRunner {
                 // (There may be situations where the parser runs out of messages to parse but the script
                 // is still running)
                 if (child.exitCode) {
-                    // Print execution summary to logs
-                    this.logTestRunSummary(event.results);
                     resolve(event.results);
                 }
             });
@@ -229,6 +227,51 @@ export class TestRunner {
         this.logger.info(results.getTestRunSummary());
         this.logger.info('-'.repeat(results.getTestRunSummary().length));
         this.logger.info('');
+    }
+
+    private async logFailuresAsDiagnostics(results: TestRunResult, workspaceFolder: vscode.WorkspaceFolder) {
+        if (this.settings.get('log.displayFailuresAsErrorsInCode', false, workspaceFolder) !== true) {
+            return;
+        }
+
+        let resultItems = results.getTestRunResultItems();
+        for (let result of resultItems) {
+            // Only display diagnostics for test failures
+            if (result.getStatus() !== TestRunResultStatus.failed) {
+                continue;
+            }
+
+            // Only display diagnostics if the test failure contains line item range details
+            if (result.getMessageLineItem() < 0) {
+                continue;
+            }
+
+            // Add diagnostic to display error on correct line in editor
+            let testItem = result.getTestItem();
+            let testDocumentUri = testItem.uri!;
+            let testMessageLineItemIdx = result.getMessageLineItem() - 1;
+            let diagnostics = this.testDiagnosticMap.get(testDocumentUri.toString());
+            if (!diagnostics) {
+                diagnostics = [];
+            }
+
+            let testDocument = await vscode.workspace.openTextDocument(testDocumentUri);
+            let testDocumentLine = testDocument.lineAt(testMessageLineItemIdx);
+
+            let diagnosticRange = new vscode.Range(
+                new vscode.Position(testMessageLineItemIdx, testDocumentLine.firstNonWhitespaceCharacterIndex),
+                new vscode.Position(testMessageLineItemIdx, testDocumentLine.text.length)
+            );
+            let diagnostic = new vscode.Diagnostic(diagnosticRange, result.getMessage(), vscode.DiagnosticSeverity.Error);
+            diagnostic.source = 'PHPUnit Test Workbench';
+            diagnostics.push(diagnostic);
+            this.testDiagnosticMap.set(testDocumentUri.toString(), diagnostics);
+        }
+
+        // Apply diagnostics collected during parsing test run results
+        this.testDiagnosticMap.forEach((diagnostics, file) => {
+            this.diagnosticCollection.set(vscode.Uri.parse(file), diagnostics);
+        });
     }
 
     private buildTestRunQueue(run: vscode.TestRun, queue: Map<string, vscode.TestItem>, item: vscode.TestItem): Map<string, vscode.TestItem> {

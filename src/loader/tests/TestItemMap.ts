@@ -3,12 +3,14 @@ import { generateTestItemId } from './TestFileParser';
 import { ItemType, TestItemDefinition } from './TestItemDefinition';
 
 export class TestItemMap {
-    private testItemMap: Map<string, vscode.TestItem>;
     private testDataMap: WeakMap<vscode.TestItem, TestItemDefinition>;
+    private testItemMap: Map<string, vscode.TestItem>;
+    private testFileMap: Map<vscode.Uri, vscode.TestItem[]>;
 
     constructor() {
-        this.testItemMap = new Map<string, vscode.TestItem>();
         this.testDataMap = new WeakMap<vscode.TestItem, TestItemDefinition>();
+        this.testItemMap = new Map<string, vscode.TestItem>();
+        this.testFileMap = new Map<vscode.Uri, vscode.TestItem[]>();
     }
 
     public has(item: vscode.TestItem | string): boolean {
@@ -22,8 +24,19 @@ export class TestItemMap {
     }
 
     public set(item: vscode.TestItem, definition: TestItemDefinition) {
-        this.testItemMap.set(item.id, item);
         this.testDataMap.set(item, definition);
+        this.testItemMap.set(item.id, item);
+        
+        if (!item.uri) {
+            return;
+        }
+
+        let testFileItems = this.testFileMap.get(item.uri);
+        if (!testFileItems) {
+            testFileItems = [];
+        }
+        testFileItems.push(item);
+        this.testFileMap.set(item.uri, testFileItems);
     }
 
     public delete(item: vscode.TestItem | string) {
@@ -84,5 +97,31 @@ export class TestItemMap {
         }
 
         return this.testDataMap.get(testItem);
+    }
+
+    public getClassTestItem(uri: vscode.Uri, position: vscode.Position): vscode.TestItem | undefined {
+        return this.getFileTestItem(ItemType.class, uri, position);
+    }
+
+    public getMethodTestItem(uri: vscode.Uri, position: vscode.Position): vscode.TestItem | undefined {
+        return this.getFileTestItem(ItemType.method, uri, position);
+    }
+
+    private getFileTestItem(type: ItemType, uri: vscode.Uri, position: vscode.Position): vscode.TestItem | undefined {
+        let uriTestItems = this.testFileMap.get(uri);
+        if (!uriTestItems) {
+            return;
+        }
+
+        let testItem = undefined;
+        for (let item of uriTestItems) {
+            let itemDef = this.getTestItemDef(item);
+            if (!itemDef || itemDef.getType() !== type) {
+                continue;
+            }
+            if (item.range && item.range.contains(position)) {
+                return item;
+            }
+        }
     }
 }

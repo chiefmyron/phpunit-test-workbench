@@ -101,6 +101,12 @@
           "default": "testRunFailures",
           "markdownDescription": "Control when to automatically display the Output panel showing log messages. Regardless of this setting, log output can always be viewed by opening the relevant Output panel manually."
         },
+        "phpunit-test-workbench.log.displayFailuresAsErrorsInCode": {
+          "scope": "resource",
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "If enabled, the failed assertion will be highlighted as an error in source code."
+        },
         "phpunit-test-workbench.php.binaryPath": {
           "scope": "resource",
           "type": "string",

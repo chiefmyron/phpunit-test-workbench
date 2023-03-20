@@ -1,10 +1,11 @@
 import * as vscode from 'vscode';
 import { Logger } from "../output";
-import { generateTestItemId } from "../parser/TestFileParser";
-import { ItemType } from "../parser/TestItemDefinition";
-import { ResultParsingCompleteEvent } from './events/ResultParsingCompleteEvent';
 import { TestRunResult } from "./TestRunResult";
 import { TestRunResultItem, TestRunResultStatus } from "./TestRunResultItem";
+import { generateTestItemId } from "../loader/tests/TestFileParser";
+import { ItemType } from "../loader/tests/TestItemDefinition";
+import { ResultParsingCompleteEvent } from './events/ResultParsingCompleteEvent';
+import { Settings } from '../settings';
 
 const patternTestStarted = new RegExp(/##teamcity\[testStarted /);
 const patternTestFailed = new RegExp(/##teamcity\[testFailed /);
@@ -27,25 +28,30 @@ const patternFatalError = new RegExp(/Fatal error: (.*)/);
 export class TestRunResultParser extends vscode.EventEmitter<any> {
     private run: vscode.TestRun;
     private testItemQueue: Map<string, vscode.TestItem>;
+    private settings: Settings;
     private logger: Logger;
     private messageQueue: string[];
     private result: TestRunResultItem | undefined;
     private results: TestRunResult;
     private buffer: string;
-    private counter: number;
     private _isParsing: boolean;
     private _onParsingComplete: vscode.EventEmitter<ResultParsingCompleteEvent>;
 
-    constructor(run: vscode.TestRun, queue: Map<string, vscode.TestItem>, logger: Logger) {
+    constructor(
+        run: vscode.TestRun,
+        queue: Map<string, vscode.TestItem>,
+        settings: Settings,
+        logger: Logger
+    ) {
         super();
 
         this.run = run;
         this.testItemQueue = queue;
+        this.settings = settings;
         this.logger = logger;
         this.messageQueue = [];
         this.results = new TestRunResult();
         this.buffer = '';
-        this.counter = 0;
         this._isParsing = false;
         this._onParsingComplete = new vscode.EventEmitter<ResultParsingCompleteEvent>();
     }
@@ -198,7 +204,6 @@ export class TestRunResultParser extends vscode.EventEmitter<any> {
 
                 // Update the test run to indicate the test has started
                 this.run.started(testItem);
-                this.counter++;
             } else {
                 this.logger.warn('Unable to find test item for test: ' + testId);
             }
@@ -246,6 +251,11 @@ export class TestRunResultParser extends vscode.EventEmitter<any> {
             result.setDuration(duration);
 
             if (result.getStatus() === TestRunResultStatus.failed) {
+                // Check settings to see whether we need to display the output window
+                if (this.settings.get('log.autoDisplayOutput', 'testRunFailures') === 'testRunFailures') {
+                    this.logger.showOutputChannel();
+                }
+
                 // Update the test run to mark the test as failed
                 this.run.failed(testItem, result.getTestMessage(), duration);
 

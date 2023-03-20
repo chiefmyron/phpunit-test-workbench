@@ -11,15 +11,21 @@ export class TestSuiteMap {
     public getWorkspaceTestSuites(workspaceFolder: vscode.WorkspaceFolder): TestSuite[] {
         const suites: TestSuite[] = [];
         this.testSuiteMap.forEach((suite, key) => {
-            if (suite.getWorkspaceFolder() === workspaceFolder) {
+            if (key.startsWith(workspaceFolder.uri.toString())) {
                 suites.push(suite);
             }
         });
         return suites;
     }
 
-    public set(suite: TestSuite) {
-        let id = suite.getWorkspaceFolderUri().toString() + '||' + suite.getName();
+    public add(workspaceFolder: vscode.WorkspaceFolder, suites: TestSuite[]) {
+        for (let suite of suites) {
+            this.set(workspaceFolder, suite);
+        }
+    }
+
+    public set(workspaceFolder: vscode.WorkspaceFolder, suite: TestSuite) {
+        let id = workspaceFolder.uri.toString() + '||' + suite.getName();
         this.testSuiteMap.set(id, suite);
     }
 
