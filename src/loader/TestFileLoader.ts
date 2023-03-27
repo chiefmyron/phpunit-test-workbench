@@ -7,15 +7,20 @@ import { TestItemMap } from './tests/TestItemMap';
 import { TestSuiteMap } from './suites/TestSuiteMap';
 import { TestSuite } from './suites/TestSuite';
 import { ConfigFileParser } from './configs/ConfigFileParser';
+import { NamespaceMap } from './composer/NamespaceMap';
+import { ComposerFileParser } from './composer/ComposerFileParser';
+import { AutoloaderDefinition } from './composer/AutoloaderDefinition';
 
 export class TestFileLoader {
     private ctrl: vscode.TestController;
     private testItemMap: TestItemMap;
     private testSuiteMap: TestSuiteMap;
+    private namespaceMap: NamespaceMap;
     private settings: Settings;
     private logger: Logger;
     private watchers: vscode.FileSystemWatcher[];
     private configParser: ConfigFileParser;
+    private composerParser: ComposerFileParser;
     private testParser: TestFileParser;
 
     constructor(
@@ -33,8 +38,9 @@ export class TestFileLoader {
         this.watchers = [];
 
         this.configParser = new ConfigFileParser(settings, logger);
+        this.composerParser = new ComposerFileParser(settings, logger);
         this.testParser = new TestFileParser(settings, logger);
-        
+        this.namespaceMap = new NamespaceMap();        
     }
 
     /***********************************************************************/
@@ -85,13 +91,28 @@ export class TestFileLoader {
         // Discover relevant files in all workspace folders
         return Promise.all(
             vscode.workspace.workspaceFolders.map(async workspaceFolder => {
-                // Get glob pattern definition for location of PHPUnit configuration files
+                // If settings for the workspace have a PSR-4 namespace prefix defined, add it to the namespace map
+                const namespacePrefix = this.getTestNamespacePrefix(workspaceFolder);
+                if (namespacePrefix) {
+                    let namespaceDefinition = new AutoloaderDefinition(workspaceFolder, namespacePrefix, this.getTestDirectory(workspaceFolder));
+                    this.namespaceMap.add(workspaceFolder, [namespaceDefinition]);
+                }
+
+                // Locate PHPUnit configuration files
                 const configPattern = this.getLocatorPatternConfigFile(workspaceFolder);
                 this.setWatchersForConfigFiles(workspaceFolder, configPattern);
 
                 // Parse configuration file immediately (this is required to retrieve test suite definitions, in case
                 // test methods are organised by suite - see below)
                 await this.parseWorkspaceFolderConfigFiles(workspaceFolder, configPattern);
+
+                // Locate composer.json file
+                const composerPattern = this.getLocatorPatternComposerFile(workspaceFolder);
+                this.setWatchersForComposerFiles(workspaceFolder, composerPattern);
+
+                // Parse composer.json file immediately (this is required in case any PSR-4 namespaces have been mapped 
+                // to custom directories for the autoloader)
+                await this.parseWorkspaceFolderComposerFiles(workspaceFolder, composerPattern);
 
                 // Locate test methods. Depending on settings, tests could be identified by test suites defined in
                 // PHPUnit configuration files, or by a glob pattern
@@ -107,7 +128,12 @@ export class TestFileLoader {
     public async resetWorkspace() {
         this.clearTestControllerItems();
         this.testSuiteMap.clear();
+        this.namespaceMap.clear();
         this.initializeWorkspace();
+    }
+
+    private getLocatorPatternComposerFile(workspaceFolder: vscode.WorkspaceFolder) {
+        return new vscode.RelativePattern(workspaceFolder, this.getComposerJsonLocatorPattern(workspaceFolder));
     }
 
     private getLocatorPatternConfigFile(workspaceFolder: vscode.WorkspaceFolder) {
@@ -146,6 +172,20 @@ export class TestFileLoader {
         watcher.onDidCreate(configFileUri => this.parseConfigFile(configFileUri, workspaceFolder));
         watcher.onDidChange(configFileUri => this.parseConfigFile(configFileUri, workspaceFolder));
         watcher.onDidDelete(configFileUri => this.removeConfigFile(configFileUri));
+        this.watchers.push(watcher);
+    }
+
+    private setWatchersForComposerFiles(
+        workspaceFolder: vscode.WorkspaceFolder,
+        pattern: vscode.RelativePattern
+    ) {
+        // Set watcher for new, changed or deleted composer.json files within the workspace
+        const watcher = vscode.workspace.createFileSystemWatcher(pattern);
+
+        // Add event handler to clean up test suites on config file delete
+        watcher.onDidCreate(configFileUri => this.parseComposerFile(configFileUri, workspaceFolder));
+        watcher.onDidChange(configFileUri => this.parseComposerFile(configFileUri, workspaceFolder));
+        watcher.onDidDelete(configFileUri => this.removeComposerFile(configFileUri));
         this.watchers.push(watcher);
     }
 
@@ -189,6 +229,20 @@ export class TestFileLoader {
             })
         );
     }
+
+    public async parseWorkspaceComposerFiles() {
+        // Handle the case of no open folders
+        if (!vscode.workspace.workspaceFolders) {
+            return;
+        }
+
+        // Discover relevant files in all workspace folders
+        vscode.workspace.workspaceFolders.map(async workspaceFolder => {
+            // Get glob pattern definition for location of composer.json files
+            const composerPattern = this.getLocatorPatternComposerFile(workspaceFolder);
+            await this.parseWorkspaceFolderComposerFiles(workspaceFolder, composerPattern);
+        });
+    }
     
     public async parseWorkspaceTestFiles() {
         // Handle the case of no open folders
@@ -214,6 +268,16 @@ export class TestFileLoader {
         const configFileUris = await vscode.workspace.findFiles(pattern);
         for (const configFileUri of configFileUris) {
             await this.parseConfigFile(configFileUri, workspaceFolder);
+        }
+    }
+
+    public async parseWorkspaceFolderComposerFiles(
+        workspaceFolder: vscode.WorkspaceFolder,
+        pattern: vscode.RelativePattern
+    ) {
+        const composerFileUris = await vscode.workspace.findFiles(pattern);
+        for (const composerFileUri of composerFileUris) {
+            await this.parseComposerFile(composerFileUri, workspaceFolder);
         }
     }
 
@@ -247,10 +311,18 @@ export class TestFileLoader {
         }
 
         // Check if the file is a PHPUnit configuration XML file
-        const patternConfig = new vscode.RelativePattern(workspaceFolder, this.getPhpUnitConfigXmlLocatorPattern(workspaceFolder));
+        const patternConfig = this.getLocatorPatternConfigFile(workspaceFolder);
         if (vscode.languages.match({ pattern: patternConfig }, document) !== 0) {
             this.parseConfigDocument(document, workspaceFolder);
             this.resetWorkspace();  // Change in PHPUnit means we need to reparse test files
+            return;
+        }
+
+        // Check if the file is a composer.json file
+        const patternComposer = this.getLocatorPatternComposerFile(workspaceFolder);
+        if (vscode.languages.match({ pattern: patternComposer }, document) !== 0) {
+            this.parseComposerDocument(document, workspaceFolder);
+            this.resetWorkspace(); // Change in composer.json means we need to reparse test files
             return;
         }
 
@@ -297,6 +369,42 @@ export class TestFileLoader {
 
     public removeConfigFile(fileUri: vscode.Uri) {
         this.testSuiteMap.deleteConfigFileTestSuites(fileUri);
+    }
+
+    /***********************************************************************/
+    /* Logic for parsing and removing a composer.json file                 */
+    /***********************************************************************/
+
+    public async parseComposerFile(
+        fileUri: vscode.Uri,
+        workspaceFolder?: vscode.WorkspaceFolder
+    ) {
+        let document = await vscode.workspace.openTextDocument(fileUri);
+        return this.parseComposerDocument(document, workspaceFolder);
+    }
+
+    public async parseComposerDocument(
+        document: vscode.TextDocument,
+        workspaceFolder?: vscode.WorkspaceFolder
+    ) {
+        // Get the workspace folder for the document, if not provided
+        if (!workspaceFolder) {
+            workspaceFolder = vscode.workspace.getWorkspaceFolder(document.uri);
+            if (!workspaceFolder) {
+                return;
+            }
+        }
+
+        // Parse the config file
+        this.logger.trace(`Parsing composer.json file: ${document.uri.toString()}`);
+        let namespaceDefinitions = await this.composerParser.parse(document.getText(), document.uri, workspaceFolder);
+
+        // Associate namespace definitions to the workspace folder
+        this.namespaceMap.add(workspaceFolder, namespaceDefinitions);
+    }
+
+    public removeComposerFile(fileUri: vscode.Uri) {
+        this.namespaceMap.deleteComposerFileNamespaces(fileUri);
     }
 
     /***********************************************************************/
@@ -360,7 +468,7 @@ export class TestFileLoader {
             if (definition.getType() === ItemType.class) {
                 parentTestItem = testSuiteTestItem;
                 if (definition.getNamespaceName()) {
-                    parentTestItem = await this.getNamespaceTestItem(workspaceFolder, definition.getNamespaceName()!, testSuiteTestItem);
+                    parentTestItem = await this.getNamespaceTestItem(workspaceFolder, definition, testSuiteTestItem);
                 }
                 parentTestItem = this.getClassTestItem(definition, parentTestItem);
             } else if (definition.getType() === ItemType.method) {
@@ -435,32 +543,62 @@ export class TestFileLoader {
         return item;
     }
 
-    private async getNamespaceTestItem(workspaceFolder: vscode.WorkspaceFolder, namespace: string, parent?: vscode.TestItem): Promise<vscode.TestItem | undefined> {
+    private async getNamespaceTestItem(workspaceFolder: vscode.WorkspaceFolder, classDefinition: TestItemDefinition, parent?: vscode.TestItem): Promise<vscode.TestItem | undefined> {
+        // If tests are not being organised by namespace, no need to go further
         if (this.isOrganizedByNamespace() !== true) {
             return parent;
         }
 
-        let namespacePrefix = this.getTestNamespacePrefix(workspaceFolder);
-        let namespaceDir = workspaceFolder.uri.with({ path: workspaceFolder.uri.path + '/' + this.getTestDirectory() });
-
-        // If the test directory has been mapped to a namespace, create a new TestItem to cover the entire prefix
-        let namespaceParts: string[] = [];
-        if (namespacePrefix.length > 0) {
-            // Treat the prefix components as one chunk, and then subsequent components separately
-            namespaceParts.push(namespacePrefix);
-            namespacePrefix = namespacePrefix.replace(/\\/g, '\\'); // Fix for escaped backslashes
-            namespace = namespace.replace(namespacePrefix + '\\', '');
-            namespaceParts.push(...namespace.split('\\'));
-        } else {
-            namespaceParts = namespace.split('\\');
+        // If the class is not associated with a namespace, no need to go further
+        let classNamespace = classDefinition.getNamespaceName();
+        if (!classNamespace) {
+            return parent;
         }
 
-        // Fix for #47: Check directory exists to map onto the namespace
-        let targetNamespaceFolder = namespaceDir.with({ path: namespaceDir.path + '/' + namespace.replace('\\', '/')});
-        try {
-            let namespaceDirectoryStats = await vscode.workspace.fs.stat(targetNamespaceFolder);
-        } catch (error) {
-            this.logger.warn(`No directory could be found that maps to namespace '${namespace}' (Folder '${targetNamespaceFolder.fsPath}' not found.)`);
+        // Find the correct namespace prefix from the namespace map
+        let namespacePrefix = '';
+        let namespaceParts: string[] = [];
+        let namespaceFolderExists = false;
+        let namespaceDir: vscode.Uri | undefined = undefined;
+        let classFilePath = classDefinition.getUri().path;
+        let normalisedNamespace = classNamespace;
+        let mappedNamespaces = this.namespaceMap.getWorkspaceNamespaceMap(workspaceFolder);
+        for (let mappedNamespace of mappedNamespaces) {
+            // Check whether the mapped namespace is a prefix for the current namespace
+            if (classNamespace.startsWith(mappedNamespace.getNamespace()) !== true) {
+                continue;
+            }
+
+            // Check that the directory of the mapped namespace matches the directory of the test class
+            if (classFilePath.startsWith(mappedNamespace.getDirectoryUri().path) !== true) {
+                continue;
+            }
+
+            // Treat the mapped namespace prefix as a single piece, create a new TestItem to cover the entire prefix
+            namespacePrefix = mappedNamespace.getNamespace();
+            if (namespacePrefix.endsWith('\\')) {
+                namespacePrefix = namespacePrefix.substring(0, namespacePrefix.length - 1);
+            }
+            namespaceDir = mappedNamespace.getDirectoryUri();
+            namespaceParts.push(namespacePrefix);
+            namespacePrefix = namespacePrefix.replace(/\\/g, '\\'); // Fix for escaped backslashes
+            normalisedNamespace = classNamespace.replace(namespacePrefix + '\\', '');
+            namespaceParts.push(...normalisedNamespace.split('\\'));
+
+            // Check whether the normalised namespace actually exists as a folder location
+            let targetNamespaceFolder = namespaceDir.with({ path: namespaceDir.path + '/' + normalisedNamespace.replace('\\', '/')});
+            try {
+                let namespaceFolderStats = await vscode.workspace.fs.stat(targetNamespaceFolder);
+                namespaceFolderExists = true;
+                break; // If we reach here, then the directory exists
+            } catch (error) {
+                this.logger.warn(`Potential namespace folder '${targetNamespaceFolder.fsPath}' not found.`);
+            }
+        }
+
+        // If no namespace map produced a valid directory, then do not create any namespace TestItems
+        if (!namespaceFolderExists || !namespaceDir) {
+            this.logger.warn(`No namespace map produced a valid folder for namespace '${classNamespace}.`);
             return parent;
         }
 
@@ -470,7 +608,11 @@ export class TestFileLoader {
             // Set path and mapped directory for namespace component
             namespacePath = namespacePath + '\\' + namespacePart;
             if (namespacePart !== namespacePrefix) {
-                namespaceDir = namespaceDir.with({ path: namespaceDir.path + '/' + namespacePart.replace('\\', '/') });
+                let namespaceDirPath = namespaceDir.path;
+                if (namespaceDirPath.endsWith('/') !== true) {
+                    namespaceDirPath = namespaceDirPath + '/';
+                }
+                namespaceDir = namespaceDir.with({ path: namespaceDirPath + namespacePart.replace('\\', '/') });
             }
 
             // Find or create TestItem for namespace component
@@ -617,6 +759,12 @@ export class TestFileLoader {
         let pattern = this.getTestDirectory(workspaceFolder) + '/**/' + this.getTestSuffixGlob(workspaceFolder);
         this.logger.trace('Using locator pattern for test file identification: ' + pattern);
         return new vscode.RelativePattern(workspaceFolder, pattern);
+    }
+
+    private getComposerJsonLocatorPattern(workspaceFolder?: vscode.WorkspaceFolder) {
+        let pattern = this.settings.get('php.locatorPatternComposerJson', 'composer.json', workspaceFolder);
+        this.logger.trace(`Using locator pattern for Composer file identification: ${pattern}`);
+        return pattern;
     }
 
     private getPhpUnitConfigXmlLocatorPattern(workspaceFolder?: vscode.WorkspaceFolder) {

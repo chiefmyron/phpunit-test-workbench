@@ -112,6 +112,12 @@
           "type": "string",
           "markdownDescription": "Path to location of the PHP binary. If left blank, will attempt to use globally available binary."
         },
+        "phpunit-test-workbench.php.locatorPatternComposerJson": {
+          "scope": "resource",
+          "type": "string",
+          "markdownDescription": "The glob describing the location of your composer file (usually named `composer.json`). If left blank, PHPUnit Test Workbench will attempt to find a `composer.json` file in the root workspace folder.",
+          "default": "composer.json"
+        },
         "phpunit-test-workbench.phpunit.binaryPath": {
           "scope": "resource",
           "type": "string",
@@ -134,7 +140,7 @@
         "phpunit-test-workbench.phpunit.testNamespacePrefix": {
           "scope": "resource",
           "type": "string",
-          "markdownDescription": "If using PSR-4 namespaces, use this setting to map your test namespace to the test directory. Default is blank (which assumes the folder structure inside your test directory matches the namespace structure exactly)."
+          "markdownDescription": "If using PSR-4 namespaces, use this setting to map your test namespace prefix to the test directory (as defined in the `phpunit-test-workbench.phpunit.testDirectory` setting). Default is blank - this assumes that either:\n  - Your `composer.json` file maps the namespaces for your test classes (recommended); or\n  - The folder structure inside your test directory matches the namespace structure exactly."
         },
         "phpunit-test-workbench.phpunit.useTestSuiteDefinitions": {
           "scope": "machine",
