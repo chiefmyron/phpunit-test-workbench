@@ -41,14 +41,18 @@ An extension to integrate PHPUnit with the native Test Explorer functionality wi
 |------|-----------|
 |`log.level`|Control the level of information displayed in the output panel.|
 |`log.autoDisplayOutput`|Control when to automatically display the Output panel showing log messages. Regardless of this setting, log output can always be viewed by opening the relevant Output panel manually.|
+|`log.displayFailuresAsErrorsInCode`|If enabled, the failed assertion will be highlighted as an error in source code.|
 |`php.binaryPath`|Path to the location of the PHP binary. If left blank, it will be assumed that `php` is available via the environment `$PATH` variable.|
+|`phpunit.locatorPatternComposerJson`|The glob describing the location of your composer file (usually named `composer.json`). If left blank, PHPUnit Test Workbench will attempt to find a `composer.json` file in the root workspace folder. The default pattern is `composer.json`.|
 |`phpunit.binaryPath`|Path to the location of the PHPUnit binary (either `phpunit` or `phpunit.phar`). If left blank, the following locations will be checked: <li>Composer `vendor` directory</li><li>`phpunit.phar` in the root of the current workspace directory</li>If not found anywhere, it will be assumed that `phpunit.phar` is available via the environment `$PATH` variable.|
 |`phpunit.locatorPatternConfigXml`|The glob describing the location of your configuration file (usually named `phpunit.xml`). The default pattern is `phpunit.xml`.|
 |`phpunit.testDirectory`|Relative path from the workspace folder root to the directory where tests should be executed from (usually the `tests` folder).|
 |`phpunit.testFileSuffix`|Suffix used to identify test files within the test directory. If left blank, PHPUnit default suffixes (`Test.php` and `.phpt`) will be used.|
-|`phpunit.testNamespacePrefix`|If using PSR-4 namespaces, use this setting to map your test namespace to the test directory. Default is blank (which assumes the folder structure inside your test directory matches the namespace structure exactly).|
+|`phpunit.testNamespacePrefix`|If using PSR-4 namespaces, use this setting to map your test namespace prefix to the test directory (as defined in the `phpunit-test-workbench.phpunit.testDirectory` setting). Default is blank - this assumes that either: <li>Your `composer.json` file maps the namespaces for your test classes (__recommended__); or</li><li>The folder structure inside your test directory matches the namespace structure exactly.</li>|
 |`phpunit.testOrganization`|Method used to organise and display tests in the Test Explorer:<li>__By file__: Show as a flat list of files, with test methods as children</li><li>__By namespace__: Hierarchical display, organized using the namespace structure (assumes compliance with [PSR-4](https://www.php-fig.org/psr/psr-4/))</li>|
 |`phpunit.useTestSuiteDefinitions`|Use test suite definitions within your configuration file to locate and group tests in the Test Explorer. Note that using this option requires a valid PHPUnit configuration file to be found via the `phpunit.locatorPatternConfigXml` glob pattern. Test suite definitions in the configuration file will ignore the `phpunit.testDirectory` setting.|
+|`xdebug.clientPort`|Default port to use for Xdebug connections, if a port is not defined in your selected debug launch configuration. Default is `9003`.|
+|`xdebug.clientHost`|Default hostname to use for Xdebug connections, if a host is not defined in your selected debug launch configuration. Default is `localhost`.|
 
 ## Examples
 ### Test organization
