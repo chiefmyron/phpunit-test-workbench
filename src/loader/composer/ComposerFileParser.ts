@@ -15,7 +15,7 @@ export class ComposerFileParser {
         this.logger = logger;
 
         this.logger.trace('Creating new ComposerFileParser instance...');
-        this.logger.trace('ConfigFileParser instance created!');
+        this.logger.trace('ComposerFileParser instance created!');
     }
 
     public async parse(

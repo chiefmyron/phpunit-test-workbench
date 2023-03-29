@@ -16,8 +16,8 @@ An extension to integrate PHPUnit with the native Test Explorer functionality wi
 * Debug test scripts using your existing debug profiles
 
 ## Requirements
-* __PHP:__ Version 7
-* __PHPUnit:__ Currently only tested on version 9
+* __PHP:__ Version 7+
+* __PHPUnit:__ Version 9 & 10
 * __XDebug:__ Version 3
 
 >PHP binary and PHPUnit must be installed on the environment where the tests are being run. 

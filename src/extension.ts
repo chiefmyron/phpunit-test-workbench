@@ -111,12 +111,6 @@ async function initializeWorkspace(logger: Logger, testFileLoader: TestFileLoade
 	// Scan workspace folders for configuration files
 	logger.trace('Initialise workspace by reading configuration files and setting file system watchers');
 	await testFileLoader.initializeWorkspace();
-
-	// Run initial test discovery on files already present in the workspace
-	logger.trace('Run initial test discovery against files already open in the workspace');
-	for (const doc of vscode.workspace.textDocuments) {
-		testFileLoader.parseOpenDocument(doc);
-	}
 }
 
 async function updateConfigurationSettings(settings: Settings, testFileLoader: TestFileLoader) {
