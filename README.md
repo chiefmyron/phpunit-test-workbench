@@ -71,12 +71,14 @@ An extension to integrate PHPUnit with the native Test Explorer functionality wi
 ![Execute tests via commands](docs/images/example-commands.gif)
 
 ## Release notes
+### v0.4.1 - 2022-03-29
+* __FIXED:__ Namespace folder locations not being correctly identified on Remote Workspaces ([#58](https://github.com/chiefmyron/phpunit-test-workbench/issues/58))
+
 ### v0.4.0 - 2023-03-28
 * __NEW:__ Add support for PHPUnit 10 ([#49](https://github.com/chiefmyron/phpunit-test-workbench/issues/49))
 * __NEW:__ Add detection for namespaces mapped in composer.json ([#50](https://github.com/chiefmyron/phpunit-test-workbench/issues/50))
 * __CHANGED:__ Refactor test file parsing to find additional test script edge cases ([#54](https://github.com/chiefmyron/phpunit-test-workbench/issues/54))
 * __FIXED:__ Not all test results captured when executing against large test suites ([#51](https://github.com/chiefmyron/phpunit-test-workbench/issues/51))
-
 
 ### v0.3.4 - 2022-12-12
 * __FIXED:__ Editing an existing test script does not not update location of shifted class and function 'run' icons ([#47](https://github.com/chiefmyron/phpunit-test-workbench/issues/47))
