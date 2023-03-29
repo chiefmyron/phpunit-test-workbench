@@ -557,86 +557,91 @@ export class TestFileLoader {
 
         // Find the correct namespace prefix from the namespace map
         let namespacePrefix = '';
-        let namespaceParts: string[] = [];
-        let namespaceFolderExists = false;
-        let namespaceDir: vscode.Uri | undefined = undefined;
-        let classFilePath = classDefinition.getUri().path;
-        let normalisedNamespace = classNamespace;
-        let mappedNamespaces = this.namespaceMap.getWorkspaceNamespaceMap(workspaceFolder);
-        for (let mappedNamespace of mappedNamespaces) {
-            // Check whether the mapped namespace is a prefix for the current namespace
+        let namespacePrefixPath = '';
+        for (let mappedNamespace of this.namespaceMap.getWorkspaceNamespaceMap(workspaceFolder)) {
+            // If the class namespace doesn't start with the mapped namespace, it is not the prefix
             if (classNamespace.startsWith(mappedNamespace.getNamespace()) !== true) {
                 continue;
             }
 
-            // Check that the directory of the mapped namespace matches the directory of the test class
-            if (classFilePath.startsWith(mappedNamespace.getDirectoryUri().path) !== true) {
+            // If the path to the class doesn't start with the path to the mapped namespace, it is not the prefix
+            if (classDefinition.getUri().path.startsWith(mappedNamespace.getDirectoryUri().path) !== true)  {
                 continue;
             }
 
-            // Treat the mapped namespace prefix as a single piece, create a new TestItem to cover the entire prefix
+            // If we reach this point, then the mapped namespace is acting as a namespace prefix for the class
             namespacePrefix = mappedNamespace.getNamespace();
-            if (namespacePrefix.endsWith('\\')) {
-                namespacePrefix = namespacePrefix.substring(0, namespacePrefix.length - 1);
+            if (namespacePrefix.endsWith('\\') === true) {
+                namespacePrefix = namespacePrefix.slice(0, -1); // Remove trailing namespace path separator
             }
-            namespaceDir = mappedNamespace.getDirectoryUri();
-            namespaceParts.push(namespacePrefix);
-            namespacePrefix = namespacePrefix.replace(/\\/g, '\\'); // Fix for escaped backslashes
-            normalisedNamespace = classNamespace.replace(namespacePrefix + '\\', '');
-            namespaceParts.push(...normalisedNamespace.split('\\'));
-
-            // Check whether the normalised namespace actually exists as a folder location
-            let targetNamespaceFolder = namespaceDir.with({ path: namespaceDir.path + '/' + normalisedNamespace.replace('\\', '/')});
-            try {
-                let namespaceFolderStats = await vscode.workspace.fs.stat(targetNamespaceFolder);
-                namespaceFolderExists = true;
-                break; // If we reach here, then the directory exists
-            } catch (error) {
-                this.logger.warn(`Potential namespace folder '${targetNamespaceFolder.fsPath}' not found.`);
+            namespacePrefixPath = mappedNamespace.getDirectoryUri().path;
+            if (namespacePrefixPath.endsWith('/') === true) {
+                namespacePrefixPath = namespacePrefixPath.slice(0, -1); // Remove trailing directory separator
             }
+            break;
         }
 
-        // If no namespace map produced a valid directory, then do not create any namespace TestItems
-        if (!namespaceFolderExists || !namespaceDir) {
-            this.logger.warn(`No namespace map produced a valid folder for namespace '${classNamespace}.`);
+        // If no namespace prefix was found, then class will need to live underneath the parent TestItem
+        if (namespacePrefix.length <= 0) {
+            this.logger.warn(`Unable to find a valid file path for namespace '${classNamespace}.`);
             return parent;
         }
 
-        // Traverse namespace components and create TestItem for each
-        let namespacePath = '';
-        for (let namespacePart of namespaceParts) {
-            // Set path and mapped directory for namespace component
-            namespacePath = namespacePath + '\\' + namespacePart;
-            if (namespacePart !== namespacePrefix) {
-                let namespaceDirPath = namespaceDir.path;
-                if (namespaceDirPath.endsWith('/') !== true) {
-                    namespaceDirPath = namespaceDirPath + '/';
-                }
-                namespaceDir = namespaceDir.with({ path: namespaceDirPath + namespacePart.replace('\\', '/') });
-            }
+        // Build an array of namespace component parts for the class namespace. The prefix is considered as 
+        // a single component.
+        let namespaceParts: string[] = [];
+        namespaceParts.push(namespacePrefix);
 
-            // Find or create TestItem for namespace component
-            let id = generateTestItemId(ItemType.namespace, namespaceDir);
+        // Remove the prefix from the class namespace, and split into its constituent parts
+        let normalisedClassNamespace = classNamespace.replace(namespacePrefix + '\\', '');
+        namespaceParts.push(...normalisedClassNamespace.split('\\'));
+
+        // Verify that the target namespace directory exists
+        let targetNamespaceUri = workspaceFolder.uri.with({ path: namespacePrefixPath + '/' + normalisedClassNamespace.replace('\\', '/')});
+        try {
+            let namespaceFolderStats = await vscode.workspace.fs.stat(targetNamespaceUri);
+        } catch (error) {
+            this.logger.warn(`Directory not found for namespace '${classNamespace}' (Directory should be: ${targetNamespaceUri.fsPath})`);
+            return parent;
+        }
+
+        // Traverse namespace component parts, and create a TestItem for each (if one doesn't already exist)
+        let namespacePath = '';
+        let namespaceName = '';
+        for (let namespacePart of namespaceParts) {
+            // Set directory path for the namespace component part
+            if (namespacePath.length <= 0) {
+                // This is the namespace prefix part
+                namespacePath = namespacePrefixPath;
+                namespaceName = namespacePrefix;
+            } else {
+                namespacePath = namespacePath + '/' + namespacePart;
+                namespaceName = namespaceName + '\\' + namespacePart;
+            }
+            let namespacePartUri = workspaceFolder.uri.with({ path: namespacePath });
+
+            // Find or create TestItem for namespace component part
+            let id = generateTestItemId(ItemType.namespace, namespacePartUri);
             let item = this.getExistingTestItem(id, parent);
 
             // If a TestItem does not already exist for the prefix, create it now
             if (!item) {
                 // Create new TestItem for the namespace prefix
-                item = this.ctrl.createTestItem(id, namespacePart, namespaceDir);
+                item = this.ctrl.createTestItem(id, namespacePart, namespacePartUri);
                 item.canResolveChildren = true;
                 this.addTestItem(item, parent);
 
                 // Update TestItem map with the new namespace
                 let definition = new TestItemDefinition(
                     ItemType.namespace,
-                    namespaceDir,
+                    namespacePartUri,
                     {
-                        namespaceName: namespacePath,
+                        namespaceName: namespaceName,
                         namespaceId: id
                     }
                 );
                 this.testItemMap.set(item, definition);
-                this.logger.trace('- Created new TestItem for namespace: ' + namespacePath);
+                this.logger.trace('- Created new TestItem for namespace: ' + namespaceName);
             }
 
             // Update parent TestItem and directory for next component
@@ -655,7 +660,7 @@ export class TestFileLoader {
             label = definition.getNamespaceName() + '\\' + definition.getClassName();
         }
         if (this.isOrganizedByNamespace() === true && definition.getNamespaceName() && !parent) {
-            // Test are organised in a namespace tree, but the namespace for this class does not conform to PRS-4
+            // Test are organised in a namespace tree, but the namespace for this class does not conform to PSR-4
             // guidelines. The class may still execute without error though, so label the class with the fully-qualified
             // namespace so that it can be reviewed.
             label = definition.getNamespaceName() + '\\' + definition.getClassName();
