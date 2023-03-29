@@ -71,7 +71,7 @@ An extension to integrate PHPUnit with the native Test Explorer functionality wi
 ![Execute tests via commands](docs/images/example-commands.gif)
 
 ## Release notes
-### v0.4.1 - 2022-03-29
+### v0.4.1 - 2023-03-29
 * __FIXED:__ Namespace folder locations not being correctly identified on Remote Workspaces ([#58](https://github.com/chiefmyron/phpunit-test-workbench/issues/58))
 
 ### v0.4.0 - 2023-03-28

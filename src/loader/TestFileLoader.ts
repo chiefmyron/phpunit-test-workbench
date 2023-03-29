@@ -597,11 +597,14 @@ export class TestFileLoader {
         namespaceParts.push(...normalisedClassNamespace.split('\\'));
 
         // Verify that the target namespace directory exists
-        let targetNamespaceUri = workspaceFolder.uri.with({ path: namespacePrefixPath + '/' + normalisedClassNamespace.replace('\\', '/')});
+        let targetNamespaceUri = workspaceFolder.uri.with({ path: namespacePrefixPath + '/' + normalisedClassNamespace.replace(/\\/g, '/')});
         try {
             let namespaceFolderStats = await vscode.workspace.fs.stat(targetNamespaceUri);
-        } catch (error) {
+        } catch (error: any) {
             this.logger.warn(`Directory not found for namespace '${classNamespace}' (Directory should be: ${targetNamespaceUri.fsPath})`);
+            if (error instanceof vscode.FileSystemError) {
+                this.logger.warn(error.message);
+            }
             return parent;
         }
 
