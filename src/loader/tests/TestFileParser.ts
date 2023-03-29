@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { Attribute, Class, Declaration, Engine, Identifier, Method, Namespace, Node, Program, UseGroup } from 'php-parser';
+import { Attribute, Class, Declaration, Engine, Method, Namespace, Node, Program, UseGroup } from 'php-parser';
 import { Logger } from '../../output';
 import { Settings } from '../../settings';
 import { ItemType, TestItemDefinition } from './TestItemDefinition';
@@ -149,6 +149,7 @@ export class TestFileParser {
             meta.classmap = new Map<string, string>();
         }
 
+        // @ts-ignore UseGroup.items is the correct property name
         for (let useItem of useGroup.items) {
             if (useItem.alias) {
                 meta.classmap.set(useItem.name, useItem.alias.name);
