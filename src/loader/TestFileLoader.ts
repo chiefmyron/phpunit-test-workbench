@@ -656,8 +656,9 @@ export class TestFileLoader {
 
     private getClassTestItem(definition: TestItemDefinition, parent?: vscode.TestItem): vscode.TestItem {
         let id = definition.getClassId()!;
-        let label = definition.getClassName()!;
-        if (this.isOrganizedByNamespace() !== true && definition.getNamespaceName()) {
+        let name = definition.getClassName()!;
+        let label = definition.getClassLabel()!;
+        if (this.isOrganizedByNamespace() !== true && definition.getNamespaceName() && name === label) {
             // Tests are not organised in a namespace tree, so label the class with the fully-qualified namespace to
             // ensure it can be identified correctly
             label = definition.getNamespaceName() + '\\' + definition.getClassName();
@@ -672,7 +673,8 @@ export class TestFileLoader {
         // Check if TestItem has already been created for the class
         let item = this.getExistingTestItem(id, parent);
         if (item) {
-            // TestItem for class already exists
+            // Always update the label, in case it has been modified
+            item.label = label;
             if (parent) {
                 // FIX FOR #47: If this class already exists as a child of a different parent 
                 // (i.e. the namespace for the class has changed), remove it from the old parent
@@ -698,7 +700,7 @@ export class TestFileLoader {
 
     private getMethodTestItem(definition: TestItemDefinition, parent?: vscode.TestItem): vscode.TestItem {
         let id = definition.getMethodId()!;
-        let label = definition.getMethodName()!;
+        let label = definition.getMethodLabel()!;
 
         // Always create a new TestItem for test methods
         let item = this.ctrl.createTestItem(id, label, definition.getUri());

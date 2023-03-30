@@ -16,8 +16,10 @@ export class TestItemDefinition {
     private namespaceName?: string;
     private namespaceId?: string;
     private className?: string;
+    private classLabel?: string;
     private classId?: string;
     private methodName?: string;
+    private methodLabel?: string;
     private methodId?: string;
     private range?: vscode.Range;
 
@@ -30,8 +32,10 @@ export class TestItemDefinition {
             namespaceName?: string,
             namespaceId?: string,
             className?: string,
+            classLabel?: string,
             classId?: string,
             methodName?: string,
+            methodLabel?: string,
             methodId?: string
         }
     ) {
@@ -42,8 +46,10 @@ export class TestItemDefinition {
         this.namespaceName = details.namespaceName;
         this.namespaceId = details.namespaceId;
         this.className = details.className;
+        this.classLabel = details.classLabel;
         this.classId = details.classId;
         this.methodName = details.methodName;
+        this.methodLabel = details.methodLabel;
         this.methodId = details.methodId;
     }
 
@@ -75,11 +81,25 @@ export class TestItemDefinition {
         return this.className;
     }
 
+    public getClassLabel(): string | undefined {
+        if (this.classLabel) {
+            return this.classLabel;
+        }
+        return this.className;
+    }
+
     public getClassId(): string | undefined {
         return this.classId;
     }
 
     public getMethodName(): string | undefined {
+        return this.methodName;
+    }
+
+    public getMethodLabel(): string | undefined {
+        if (this.methodLabel) {
+            return this.methodLabel;
+        }
         return this.methodName;
     }
 
