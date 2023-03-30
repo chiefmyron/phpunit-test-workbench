@@ -1,8 +1,10 @@
 import * as vscode from 'vscode';
-import { Attribute, Class, Declaration, Engine, Method, Namespace, Node, Program, UseGroup } from 'php-parser';
+import { Attribute, Class, Comment, CommentBlock, Declaration, Engine, Method, Namespace, Node, Program, UseGroup } from 'php-parser';
 import { Logger } from '../../output';
 import { Settings } from '../../settings';
 import { ItemType, TestItemDefinition } from './TestItemDefinition';
+
+const patternTestdoxComment = new RegExp(/@testdox (.*)/);
 
 type TestFileMetadata = {
     namespace?: Namespace, 
@@ -183,6 +185,7 @@ export class TestFileParser {
             {
                 namespaceName: meta.namespace?.name,
                 className: className,
+                classLabel: this.extractTestdoxName(phpClass.leadingComments),
                 classId: classId
             }
         );
@@ -238,8 +241,10 @@ export class TestFileParser {
             {
                 namespaceName: parentDefinition.getNamespaceName(),
                 className: parentDefinition.getClassName(),
+                classLabel: parentDefinition.getClassLabel(),
                 classId: parentDefinition.getClassId(),
                 methodName: methodName,
+                methodLabel: this.extractTestdoxName(method.leadingComments),
                 methodId: methodId
             }
         );
@@ -303,5 +308,18 @@ export class TestFileParser {
             return node.name;
         }
         return node.name.name;
+    }
+
+    private extractTestdoxName(comments: CommentBlock[] | Comment[] | null): string | undefined {
+        if (!comments) {
+            return;
+        }
+
+        for (let comment of comments) {
+            let label = comment.value.match(patternTestdoxComment)?.at(1);
+            if (label) {
+                return label;
+            }
+        }
     }
 }
