@@ -603,7 +603,7 @@ export class TestFileLoader {
         } catch (error: any) {
             this.logger.warn(`Directory not found for namespace '${classNamespace}' (Directory should be: ${targetNamespaceUri.fsPath})`);
             if (error instanceof vscode.FileSystemError) {
-                this.logger.warn(error.message);
+                this.logger.trace(error.message);
             }
             return parent;
         }

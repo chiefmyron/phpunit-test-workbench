@@ -4,12 +4,11 @@ import { Settings } from '../settings';
 import { Logger } from '../output';
 import { TestRunResultParser } from './TestRunResultParser';
 import { TestExecutionRequest } from './TestExecutionRequest';
-import { TestRunResult } from './TestRunResult';
-import { parseTestItemId } from '../loader/tests/TestFileParser';
+import { TestRunResultMap } from './TestRunResultMap';
 import { ItemType } from '../loader/tests/TestItemDefinition';
 import { TestItemMap } from '../loader/tests/TestItemMap';
 import { DebugConfigQuickPickItem } from '../ui/DebugConfigQuickPickItem';
-import { TestRunResultStatus } from './TestRunResultItem';
+import { TestResultStatus } from './TestResult';
 
 export class TestRunner {
     private ctrl: vscode.TestController;
@@ -65,7 +64,7 @@ export class TestRunner {
             } else if (parentTestItemDef.getType() === ItemType.class) {
                 testExecutionRequest.setTargetClassOrFolder(parentTestItem.uri!);
             } else if (parentTestItemDef.getType() === ItemType.method) {
-                testExecutionRequest.setArgPhpUnit('--filter', `${parentTestItemDef.getMethodName()}$`);
+                testExecutionRequest.setArgPhpUnit('--filter', `'${parentTestItemDef.getMethodName()}'`);
                 testExecutionRequest.setTargetClassOrFolder(parentTestItem.uri!);
             }
 
@@ -103,13 +102,13 @@ export class TestRunner {
         // Dispatch each of the test execution requests in sequence
         for (let executionRequest of executionRequests) {
             if (cancel.isCancellationRequested !== true) {
-                let results: TestRunResult = await this.dispatchExecutionRequest(run, executionRequest, cancel, debug);
+                let resultMap: TestRunResultMap = await this.dispatchExecutionRequest(run, executionRequest, cancel, debug);
 
                 // Print execution summary to logs
-                this.logTestRunSummary(results);
+                this.logTestRunSummary(resultMap);
 
                 // Add diagnostics to source code
-                this.logFailuresAsDiagnostics(results, executionRequest.getWorkspaceFolder());
+                this.logFailuresAsDiagnostics(resultMap, executionRequest.getWorkspaceFolder());
             }
         }
 
@@ -118,7 +117,7 @@ export class TestRunner {
         run.end();
     }
 
-    private async dispatchExecutionRequest(run: vscode.TestRun, request: TestExecutionRequest, cancel: vscode.CancellationToken, debug: boolean = false): Promise<TestRunResult> {
+    private async dispatchExecutionRequest(run: vscode.TestRun, request: TestExecutionRequest, cancel: vscode.CancellationToken, debug: boolean = false): Promise<TestRunResultMap> {
         let workspaceFolder = request.getWorkspaceFolder();
         
         // If test run is being debugged, prompt user to select debug configuration
@@ -204,7 +203,7 @@ export class TestRunner {
                 }
     
                 if (parser.isParsing() === false) {
-                    resolve(parser.getResults());
+                    resolve(parser.getResultMap());
                 }
             });
 
@@ -215,57 +214,105 @@ export class TestRunner {
                 // (There may be situations where the parser runs out of messages to parse but the script
                 // is still running)
                 if (child.exitCode) {
-                    resolve(event.results);
+                    resolve(event.resultMap);
                 }
             });
         });
     }
 
-    private logTestRunSummary(results: TestRunResult) {
+    private logTestRunSummary(resultMap: TestRunResultMap) {
+        let numTestResults = resultMap.getNumTestResults();
+        let numTestItems = resultMap.getNumTestItems();
+        let numAssertions = resultMap.getNumAssertions();
+        let numSkipped = resultMap.getNumSkipped();
+        let numFailed = resultMap.getNumFailed();
+        let numErrors = resultMap.getNumErrors();
+
+        // Created formatted output string
+        let output = `Test run completed: `;
+        if (numTestResults <= 0) {
+            output = output + `No test summary information available.`;
+        } else if (numTestResults === 1) {
+            output = output + `${numTestResults} test`;
+        } else {
+            output = output + `${numTestResults} tests`;
+        }
+        if (numTestItems !== numTestResults && numTestItems === 1) {
+            output = output + ` (${numTestItems} unique test method)`;
+        } else if (numTestItems !== numTestResults && numTestItems > 1) {
+            output = output + ` (${numTestItems} unique test methods)`;
+        }
+        if (numAssertions === 1) {
+            output = output + `, ${numAssertions} assertion`;
+        } else if (numAssertions > 1) {
+            output = output + `, ${numAssertions} assertions`;
+        }
+        if (numSkipped > 0) {
+            output = output + `, ${numSkipped} skipped`;
+        }
+        if (numFailed > 0) {
+            output = output + `, ${numFailed} failed`;
+        }
+        if (numErrors > 0) {
+            output = output + `, ${numErrors} errored`;
+        }
+
+        // Print summary to log
         this.logger.info('');
-        this.logger.info('-'.repeat(results.getTestRunSummary().length));
-        this.logger.info(results.getTestRunSummary());
-        this.logger.info('-'.repeat(results.getTestRunSummary().length));
+        this.logger.info('-'.repeat(output.length));
+        this.logger.info(output);
+        this.logger.info('-'.repeat(output.length));
         this.logger.info('');
     }
 
-    private async logFailuresAsDiagnostics(results: TestRunResult, workspaceFolder: vscode.WorkspaceFolder) {
+    private async logFailuresAsDiagnostics(resultMap: TestRunResultMap, workspaceFolder: vscode.WorkspaceFolder) {
         if (this.settings.get('log.displayFailuresAsErrorsInCode', false, workspaceFolder) !== true) {
             return;
         }
 
-        let resultItems = results.getTestRunResultItems();
-        for (let result of resultItems) {
+        let resultTestItems = resultMap.getTestItems();
+        for (let testItem of resultTestItems) {
             // Only display diagnostics for test failures
-            if (result.getStatus() !== TestRunResultStatus.failed) {
+            let status = resultMap.getTestStatus(testItem);
+            if (status !== TestResultStatus.failed) {
                 continue;
             }
 
-            // Only display diagnostics if the test failure contains line item range details
-            if (result.getMessageLineItem() < 0) {
-                continue;
+            // Get the results for the test item
+            let results = resultMap.getTestResults(testItem);
+            for (let result of results) {
+                // Only display diagnostics if the test failure contains a message
+                let message = result.getMessage();
+                if (!message) {
+                    continue;
+                }
+
+                // Only display diagnostics if the test failure contains line item range details
+                let messageLineNum = result.getMessageLineNum();
+                if (!messageLineNum) {
+                    continue;
+                }
+
+                // Add diagnostic to display error on correct line in editor
+                let testDocumentUri = testItem.uri!;
+                let testMessageLineItemIdx = messageLineNum - 1;
+                let diagnostics = this.testDiagnosticMap.get(testDocumentUri.toString());
+                if (!diagnostics) {
+                    diagnostics = [];
+                }
+
+                let testDocument = await vscode.workspace.openTextDocument(testDocumentUri);
+                let testDocumentLine = testDocument.lineAt(testMessageLineItemIdx);
+
+                let diagnosticRange = new vscode.Range(
+                    new vscode.Position(testMessageLineItemIdx, testDocumentLine.firstNonWhitespaceCharacterIndex),
+                    new vscode.Position(testMessageLineItemIdx, testDocumentLine.text.length)
+                );
+                let diagnostic = new vscode.Diagnostic(diagnosticRange, message, vscode.DiagnosticSeverity.Error);
+                diagnostic.source = 'PHPUnit Test Workbench';
+                diagnostics.push(diagnostic);
+                this.testDiagnosticMap.set(testDocumentUri.toString(), diagnostics);
             }
-
-            // Add diagnostic to display error on correct line in editor
-            let testItem = result.getTestItem();
-            let testDocumentUri = testItem.uri!;
-            let testMessageLineItemIdx = result.getMessageLineItem() - 1;
-            let diagnostics = this.testDiagnosticMap.get(testDocumentUri.toString());
-            if (!diagnostics) {
-                diagnostics = [];
-            }
-
-            let testDocument = await vscode.workspace.openTextDocument(testDocumentUri);
-            let testDocumentLine = testDocument.lineAt(testMessageLineItemIdx);
-
-            let diagnosticRange = new vscode.Range(
-                new vscode.Position(testMessageLineItemIdx, testDocumentLine.firstNonWhitespaceCharacterIndex),
-                new vscode.Position(testMessageLineItemIdx, testDocumentLine.text.length)
-            );
-            let diagnostic = new vscode.Diagnostic(diagnosticRange, result.getMessage(), vscode.DiagnosticSeverity.Error);
-            diagnostic.source = 'PHPUnit Test Workbench';
-            diagnostics.push(diagnostic);
-            this.testDiagnosticMap.set(testDocumentUri.toString(), diagnostics);
         }
 
         // Apply diagnostics collected during parsing test run results
