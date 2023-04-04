@@ -1,11 +1,11 @@
 import * as vscode from 'vscode';
 import { Logger } from "../output";
-import { TestRunResult } from "./TestRunResult";
-import { TestRunResultItem, TestRunResultStatus } from "./TestRunResultItem";
 import { generateTestItemId } from "../loader/tests/TestFileParser";
 import { ItemType } from "../loader/tests/TestItemDefinition";
 import { ResultParsingCompleteEvent } from './events/ResultParsingCompleteEvent';
 import { Settings } from '../settings';
+import { TestResult, TestResultStatus } from './TestResult';
+import { TestRunResultMap } from './TestRunResultMap';
 
 const patternTestStarted = new RegExp(/##teamcity\[testStarted /);
 const patternTestFailed = new RegExp(/##teamcity\[testFailed /);
@@ -17,7 +17,9 @@ const patternTestAttribMessage = new RegExp(/##teamcity.*message='(.*?)'/);
 const patternTestAttribDetails = new RegExp(/##teamcity.*details='(.*?)'/);
 const patternTestAttribDuration = new RegExp(/##teamcity.*duration='(.*?)'/);
 const patternTestAttribType = new RegExp(/##teamcity.*type='(.*?)'/);
+const patternTestAttribExpected = new RegExp(/##teamcity.*expected='(.*?)'/);
 const patternTestAttribActual = new RegExp(/##teamcity.*actual='(.*?)'/);
+const patternTestAttribDataSetNum = new RegExp(/##teamcity.*with data set \#(.*?)'/);
 const patternSummaryOk = new RegExp(/OK \((\d*) (test|tests), (\d*) (assertion|assertions)\)/);
 const patternSummaryNotOk = new RegExp(/(Test|Tests): (\d*), (Assertion|Assertions): (\d*)/);
 const patternSummaryNotOkSkipped = new RegExp(/Skipped: (\d*)/);
@@ -31,8 +33,9 @@ export class TestRunResultParser extends vscode.EventEmitter<any> {
     private settings: Settings;
     private logger: Logger;
     private messageQueue: string[];
-    private result: TestRunResultItem | undefined;
-    private results: TestRunResult;
+    private result: TestResult | undefined;
+    //private results: TestRunResult;
+    private resultMap: TestRunResultMap;
     private buffer: string;
     private _isParsing: boolean;
     private _onParsingComplete: vscode.EventEmitter<ResultParsingCompleteEvent>;
@@ -50,7 +53,8 @@ export class TestRunResultParser extends vscode.EventEmitter<any> {
         this.settings = settings;
         this.logger = logger;
         this.messageQueue = [];
-        this.results = new TestRunResult();
+        //this.results = new TestRunResult();
+        this.resultMap = new TestRunResultMap();
         this.buffer = '';
         this._isParsing = false;
         this._onParsingComplete = new vscode.EventEmitter<ResultParsingCompleteEvent>();
@@ -78,12 +82,12 @@ export class TestRunResultParser extends vscode.EventEmitter<any> {
         }
         this._isParsing = false;
         this._onParsingComplete.fire(
-            new ResultParsingCompleteEvent(this.results)
+            new ResultParsingCompleteEvent(this.resultMap)
         );
     }
 
     public reset(): void {
-        this.results.reset();
+        this.resultMap.reset();
         this.messageQueue = [];
     }
 
@@ -174,18 +178,18 @@ export class TestRunResultParser extends vscode.EventEmitter<any> {
         }
     }
 
-    public getResults(): TestRunResult {
-        return this.results;
+    public getResultMap(): TestRunResultMap {
+        return this.resultMap;
     }
 
-    private processLineTestStarted(line: string): TestRunResultItem | undefined {
+    private processLineTestStarted(line: string): TestResult | undefined {
         // Get test details
         let testName = line.match(patternTestAttribName)?.at(1);
         let testLocationHint = line.match(patternTestAttribLocationHint)?.at(1);
 
         // Parse location hint to build up ID for test item
         let testLocationHintParts = testLocationHint?.split('::');
-        let testRunResultItem: TestRunResultItem | undefined;
+        let result: TestResult | undefined;
         if (testLocationHintParts) {
             let testFilename = testLocationHintParts[0];
             let testClassName = testLocationHintParts[1];
@@ -199,8 +203,8 @@ export class TestRunResultParser extends vscode.EventEmitter<any> {
             let testItem = this.testItemQueue.get(testId);
             if (testItem) {
                 // Create result item to track results for this test
-                testRunResultItem = new TestRunResultItem(testItem);
-                testRunResultItem.setStarted();
+                result = new TestResult(testItem);
+                result.markStarted();
 
                 // Update the test run to indicate the test has started
                 this.run.started(testItem);
@@ -210,112 +214,132 @@ export class TestRunResultParser extends vscode.EventEmitter<any> {
         } else {
             this.logger.warn('Unable to parse test location hint: ' + testLocationHint);
         }
-        return testRunResultItem;
+        return result;
     }
 
-    private processLineTestFailed(line: string, result?: TestRunResultItem): void {
+    private processLineTestFailed(line: string, result?: TestResult): void {
+        if (!result) {
+            return;
+        }
+
         // Get test details and failure message
-        let testMessage = line.match(patternTestAttribMessage)?.at(1);
-        let testMessageDetail = line.match(patternTestAttribDetails)?.at(1);
-        let testFailureType = line.match(patternTestAttribType)?.at(1);
-        let testActualValue = line.match(patternTestAttribActual)?.at(1);
+        let message = line.match(patternTestAttribMessage)?.at(1);
+        let messageDetail = line.match(patternTestAttribDetails)?.at(1);
+        let failureType = line.match(patternTestAttribType)?.at(1);
+        let expectedValue = line.match(patternTestAttribExpected)?.at(1);
+        let actualValue = line.match(patternTestAttribActual)?.at(1);
+        let dataSetIdentifier = line.match(patternTestAttribDataSetNum)?.at(1);
 
         // Update result item with failure details
-        if (result) {
-            result.setFailed(testMessage, testMessageDetail, testFailureType, testActualValue);
+        result.markFailed(message, messageDetail, failureType, expectedValue, actualValue, dataSetIdentifier);
+
+        // Check settings to see whether we need to display the output window
+        if (this.settings.get('log.autoDisplayOutput', 'testRunFailures') === 'testRunFailures') {
+            this.logger.showOutputChannel();
+        }
+
+        // Print details to log
+        this.logger.error(`❌ FAILED: ${result.getTestItem().id}`);
+        this.logger.error(`      - Failure reason: ${result.getMessage()}`);
+        if (result.getFailureType()) {
+            this.logger.error(`      - Failure type: ${result.getFailureType()}`);
+        }
+        if (result.getActualValue()) {
+            this.logger.error(`      - Actual value: ${result.getActualValue()}`);
+        }
+        if (result.getDataSetIdentifier()) {
+            this.logger.error(`      - Data set number: ${result.getDataSetIdentifier()}`);
+        }
+        if (result.getMessageDetail()) {
+            this.logger.error(`      - Failure detail: ${result.getMessageDetail()}`);
         }
     }
 
-    private processLineTestIgnored(line: string, result?: TestRunResultItem): void {
+    private processLineTestIgnored(line: string, result?: TestResult): void {
+        if (!result) {
+            return;
+        }
+
         // Get test details and failure message
         let testMessage = line.match(patternTestAttribMessage)?.at(1);
         let testMessageDetail = line.match(patternTestAttribDetails)?.at(1);
         
         // Update result item with reason why test was ignored
-        if (result) {
-            result.setIgnored(testMessage, testMessageDetail);
-        }
+        result.markIgnored(testMessage, testMessageDetail);
+
+        // Print details to log
+        this.logger.info(`➖ IGNORED: ${result.getTestItem().id}`, false, {testItem: result.getTestItem()});
     }
 
-    private processLineTestFinished(line: string, result?: TestRunResultItem): void {
+    private processLineTestFinished(line: string, result?: TestResult): void {
+        if (!result) {
+            return;
+        }
+
         // Get test details and duration
         let duration = 0;
         let testDuration = line.match(patternTestAttribDuration)?.at(1);
         if (testDuration) {
             duration = parseInt(testDuration);
+            result.setDuration(duration);
         }
 
-        // Record final result of the test
-        if (result) {
-            let testItem = result.getTestItem();
-            result.setDuration(duration);
+        // If the result is not failed or ignored, assume the test has completed successfully
+        let status = result.getStatus();
+        if (status !== TestResultStatus.failed && status !== TestResultStatus.ignored) {
+            // Update result item as passed
+            result.markPassed();
 
-            if (result.getStatus() === TestRunResultStatus.failed) {
-                // Check settings to see whether we need to display the output window
-                if (this.settings.get('log.autoDisplayOutput', 'testRunFailures') === 'testRunFailures') {
-                    this.logger.showOutputChannel();
-                }
+            // Print details to log
+            this.logger.info(`✅ PASSED: ${result.getTestItem().id}`);
+        }
+        let testMessage = this.resultMap.addResult(result);
 
-                // Update the test run to mark the test as failed
-                this.run.failed(testItem, result.getTestMessage(), duration);
-
-                // Print details to log
-                this.logger.error(`❌ FAILED: ${testItem.id}`);
-                this.logger.error(`      - Failure reason: ${result.getMessage()}`);
-                if (result.getTestFailureType().length > 0) {
-                    this.logger.error(`      - Failure type: ${result.getTestFailureType()}`);
-                }
-                if (result.getActualValue().length > 0) {
-                    this.logger.error(`      - Actual value: ${result.getActualValue()}`);
-                }
-                if (result.getMessageDetail().length > 0) {
-                    this.logger.error(`      - Failure detail: ${result.getMessageDetail()}`);
-                }
-            } else if (result.getStatus() === TestRunResultStatus.ignored) {
-                // Update the test run to mark the test as ignored / skipped
+        // Update the test run with the aggregated messages and status for all executions of the test item.
+        // Multiple executions will take place when a data provider has more than one set of data
+        let testItem = result.getTestItem();
+        let finalResult = this.resultMap.getTestStatus(testItem);
+        switch (finalResult) {
+            case TestResultStatus.failed:
+            case TestResultStatus.error:
+                this.run.failed(testItem, testMessage!, this.resultMap.getTestDuration(testItem));
+                break;
+            case TestResultStatus.ignored:
+            case TestResultStatus.skipped:
                 this.run.skipped(testItem);
-
-                // Print details to log
-                this.logger.info(`➖ IGNORED: ${testItem.id}`, false, {testItem: testItem});
-            } else if (result.getStatus() === TestRunResultStatus.started || result.getStatus() === TestRunResultStatus.passed) {
-                // Ensure result is marked as passed
-                result.setPassed();
-                
-                // Update the test run to mark the test as passed
-                this.run.passed(testItem, duration);
-
-                // Print details to log
-                this.logger.info(`✅ PASSED: ${testItem.id}`);
-            }
-            
-            // Add result to array for inclusion in summary
-            this.results.addTestRunResultItem(result);
+                break;
+            case TestResultStatus.passed:
+                this.run.passed(testItem, this.resultMap.getTestDuration(testItem));
+                break;
+            default:
+                // Not currently recording any other statuses
+                break;
         }
     }
 
     private processLineTestSummaryOk(matches: RegExpMatchArray): void {
-        this.results.setNumTests(parseInt(matches.at(1)!));
-        this.results.setNumAssertions(parseInt(matches.at(3)!));
+        this.resultMap.setNumTestResults(parseInt(matches.at(1)!));
+        this.resultMap.setNumAssertions(parseInt(matches.at(3)!));
     }
 
     private processLineTestSummaryNotOk(line: string, matches: RegExpMatchArray): void {
-        this.results.setNumTests(parseInt(matches.at(2)!));
-        this.results.setNumAssertions(parseInt(matches.at(4)!));
+        this.resultMap.setNumTestResults(parseInt(matches.at(2)!));
+        this.resultMap.setNumAssertions(parseInt(matches.at(4)!));
 
         // Check for skipped tests
         let m: RegExpMatchArray | null;
         if (m = line.match(patternSummaryNotOkSkipped)) {
-            this.results.setNumSkipped(parseInt(m.at(1)!));
+            this.resultMap.setNumSkipped(parseInt(m.at(1)!));
         }
 
         // Check for failed tests
         if (m = line.match(patternSummaryNotOkFailures)) {
-            this.results.setNumFailed(parseInt(m.at(1)!));
+            this.resultMap.setNumFailed(parseInt(m.at(1)!));
         }
 
         // Check for errored tests
         if (m = line.match(patternSummaryNotOkErrors)) {
-            this.results.setNumErrors(parseInt(m.at(1)!));
+            this.resultMap.setNumErrors(parseInt(m.at(1)!));
         }
     }
 }
