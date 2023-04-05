@@ -21,6 +21,7 @@ export class TestItemDefinition {
     private methodName?: string;
     private methodLabel?: string;
     private methodId?: string;
+    private dataProvider?: string;
     private range?: vscode.Range;
 
     constructor(
@@ -36,7 +37,8 @@ export class TestItemDefinition {
             classId?: string,
             methodName?: string,
             methodLabel?: string,
-            methodId?: string
+            methodId?: string,
+            dataProvider?: string
         }
     ) {
         this.type = type;
@@ -51,6 +53,7 @@ export class TestItemDefinition {
         this.methodName = details.methodName;
         this.methodLabel = details.methodLabel;
         this.methodId = details.methodId;
+        this.dataProvider = details.dataProvider;
     }
 
     public getType(): ItemType {
@@ -105,6 +108,10 @@ export class TestItemDefinition {
 
     public getMethodId(): string | undefined {
         return this.methodId;
+    }
+
+    public getDataProvider(): string | undefined {
+        return this.dataProvider;
     }
 
     public getRange(): vscode.Range | undefined {

@@ -141,7 +141,7 @@ export class TestExecutionRequest {
         for (const [key, value] of this.argsPhpUnit) {
             args.push(key);
             if (value && value.length > 0) {
-                this.logger.info(`  ${key}=${value}`);
+                this.logger.info(`  ${key} ${value}`);
                 args.push(value);
             } else {
                 this.logger.info(`  ${key}`);

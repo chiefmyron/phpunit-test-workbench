@@ -64,7 +64,13 @@ export class TestRunner {
             } else if (parentTestItemDef.getType() === ItemType.class) {
                 testExecutionRequest.setTargetClassOrFolder(parentTestItem.uri!);
             } else if (parentTestItemDef.getType() === ItemType.method) {
-                testExecutionRequest.setArgPhpUnit('--filter', `'${parentTestItemDef.getMethodName()}'`);
+                let dataProvider = parentTestItemDef.getDataProvider();
+                if (dataProvider) {
+                    testExecutionRequest.setArgPhpUnit('--filter', new RegExp('::' + parentTestItemDef.getMethodName() + ' .*#.*$').source);
+                } else {
+                    testExecutionRequest.setArgPhpUnit('--filter', new RegExp('::' + parentTestItemDef.getMethodName() + '$').source);
+                }
+                
                 testExecutionRequest.setTargetClassOrFolder(parentTestItem.uri!);
             }
 
