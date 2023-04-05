@@ -1,10 +1,12 @@
 import * as vscode from 'vscode';
-import { Attribute, Class, Comment, CommentBlock, Declaration, Engine, Method, Namespace, Node, Program, UseGroup } from 'php-parser';
+import { AttrGroup, Attribute, Class, Comment, CommentBlock, Declaration, Engine, Method, Namespace, Node, Parameter, Program, UseGroup } from 'php-parser';
 import { Logger } from '../../output';
 import { Settings } from '../../settings';
 import { ItemType, TestItemDefinition } from './TestItemDefinition';
 
 const patternTestdoxComment = new RegExp(/@testdox (.*)/);
+const phpUnitAttributeTest = 'PHPUnit\\Framework\\Attributes\\Test';
+const phpUnitAttributeDataProvider = 'PHPUnit\\Framework\\Attributes\\DataProvider';
 
 type TestFileMetadata = {
     namespace?: Namespace, 
@@ -245,7 +247,8 @@ export class TestFileParser {
                 classId: parentDefinition.getClassId(),
                 methodName: methodName,
                 methodLabel: this.extractTestdoxName(method.leadingComments),
-                methodId: methodId
+                methodId: methodId,
+                dataProvider: this.extractDataProvider(method, meta.classmap)
             }
         );
 
@@ -275,29 +278,18 @@ export class TestFileParser {
         }
 
         // Test method definitions may be identified by starting with 'test'
-        if (this.extractNodeName(method).startsWith('test')) {
+        if (this.extractNodeName(method).startsWith('test') === true) {
             return true;
         }
 
         // Test method definitions may be identified via the @test dockblock annotation
-        if (method.leadingComments) {
-            let commentText = method.leadingComments.map((comment) => comment.value).join('\n');
-            if (commentText.indexOf('@test', -1) > -1) {
-                return true;
-            }
+        if (this.hasAnnotation(method.leadingComments, '@test') === true) {
+            return true;
         }
 
         // Test method definitions may be identified via a #[PHPUnit\Framework\Attributes\Test] attribute (new for PHP 8 / PHPUnit 10)
-        if (method.attrGroups) {
-            let attribs = method.attrGroups.reduce((accumulator: Attribute[], group) => accumulator.concat(group.attrs), []);
-            for (const attrib of attribs) {
-                if (attrib.name === 'PHPUnit\\Framework\\Attributes\\Test') {
-                    return true;
-                }
-                if (classmap && attrib.name === classmap.get('PHPUnit\\Framework\\Attributes\\Test')) {
-                    return true;
-                }
-            }
+        if (this.hasAttribute(method.attrGroups, phpUnitAttributeTest, classmap) === true) {
+            return true;
         }
 
         return false;
@@ -321,5 +313,101 @@ export class TestFileParser {
                 return label;
             }
         }
+        return;
+    }
+
+    private extractDataProvider(method: Method, classmap?: Map<string, string>): string | undefined {
+        // Check if data provider has been specified as an attribute (new for PHP 8 / PHPUnit 10)
+        if (this.hasAttribute(method.attrGroups, phpUnitAttributeDataProvider, classmap) === true) {
+            let args = this.extractAttributeParams(method.attrGroups, phpUnitAttributeDataProvider, classmap);
+            if (args.length > 0 && args[0].kind === 'string') {
+                // @ts-ignore This will be a string value
+                return args[0].value;
+            }
+        }
+
+        // Check if data provider has been specified in a docblock annotation
+        if (this.hasAnnotation(method.leadingComments, '@dataProvider') === true) {
+            return this.extractAnnotationValue(method.leadingComments, '@dataProvider');
+        }
+        return;
+    }
+
+    private matchAttribute(attributeGroups: AttrGroup[], attribute: string, classmap?: Map<string, string>): Attribute | undefined {
+        let attribs = attributeGroups.reduce((accumulator: Attribute[], group) => accumulator.concat(group.attrs), []);
+        for (let attrib of attribs) {
+            // Check if attribute matches a fully qualified namespace
+            if (attrib.name === attribute) {
+                return;
+            }
+
+            // Perform additional checks if a classmap has been provided
+            if (classmap && classmap.has(attribute)) {
+                // Check if attribute matches an aliased class
+                if (attrib.name === classmap.get(attribute)) {
+                    return attrib;
+                }
+
+                // Check if attribute matches an unaliased class
+                let attributeParts = attribute.split('\\');
+                if (attrib.name === attributeParts.pop()) {
+                    return attrib;
+                }
+            }
+        }
+        return;
+    }
+
+    private hasAttribute(attributeGroups: AttrGroup[], attribute: string, classmap?: Map<string, string>): boolean {
+        let attrib = this.matchAttribute(attributeGroups, attribute, classmap);
+        if (attrib) {
+            return true;
+        }
+        return false;
+    }
+
+    private extractAttributeParams(attributeGroups: AttrGroup[], attribute: string, classmap?: Map<string, string>): Parameter[] {
+        let attrib = this.matchAttribute(attributeGroups, attribute, classmap);
+        if (!attrib) {
+            return [];
+        }
+
+        return attrib.args;
+    }
+
+    private matchAnnotation(comments: CommentBlock[] | Comment[] | null, annotation: string): RegExpMatchArray | null {
+        if (!comments) {
+            return null;
+        }
+
+        // Strip off leading '@', if it has been provided
+        if (annotation.startsWith('@')) {
+            annotation = annotation.substring(1);
+        }
+        
+        // Check each comment for the existence of the annotation
+        const patternAnnotation = new RegExp('@' + annotation + '( .*)?');
+        for (let comment of comments) {
+            let results = comment.value.match(patternAnnotation);
+            if (results) {
+                return results;
+            }
+        }
+        return null;
+    }
+
+    private hasAnnotation(comments: CommentBlock[] | Comment[] | null, annotation: string): boolean {
+        if (this.matchAnnotation(comments, annotation) !== null) {
+            return true;
+        }
+        return false;
+    }
+
+    private extractAnnotationValue(comments: CommentBlock[] | Comment [] | null, annotation: string): string | undefined {
+        let matchedAnnotations = this.matchAnnotation(comments, annotation);
+        if (matchedAnnotations !== null && matchedAnnotations.length > 1) {
+            return matchedAnnotations[1].trim();
+        }
+        return;
     }
 }
