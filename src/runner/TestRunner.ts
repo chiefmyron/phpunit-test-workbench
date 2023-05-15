@@ -43,6 +43,9 @@ export class TestRunner {
             this.logger.showOutputChannel();
         }
 
+        // Get tag from run profile (if set)
+        let tagId = request.profile?.tag?.id;
+
         // Build the TestItem queue for this test run
         if (request.include) {
             // Test run is only for a subset of test items
@@ -50,7 +53,7 @@ export class TestRunner {
             this.testItemQueue = this.buildTestRunQueue(run, this.testItemQueue, parentTestItem);
 
             // Get the workspace folder and settings for the parent test
-            let parentTestItemDef = this.itemMap.getTestItemDef(parentTestItem)!;
+            let parentTestItemDef = this.itemMap.getTestDefinition(parentTestItem.id)!;
             let workspaceFolder = vscode.workspace.getWorkspaceFolder(parentTestItem.uri!);
             if (!workspaceFolder) {
                 this.logger.warn(`Unable to locate workspace folder for ${parentTestItemDef.getWorkspaceFolderUri()}`);
@@ -64,8 +67,8 @@ export class TestRunner {
             } else if (parentTestItemDef.getType() === ItemType.class) {
                 testExecutionRequest.setTargetClassOrFolder(parentTestItem.uri!);
             } else if (parentTestItemDef.getType() === ItemType.method) {
-                let dataProvider = parentTestItemDef.getDataProvider();
-                if (dataProvider) {
+                let dataProviders = parentTestItemDef.getDataProviders();
+                if (dataProviders.length > 0) {
                     testExecutionRequest.setArgPhpUnit('--filter', new RegExp('::' + parentTestItemDef.getMethodName() + ' .*#.*$').source);
                 } else {
                     testExecutionRequest.setArgPhpUnit('--filter', new RegExp('::' + parentTestItemDef.getMethodName() + '$').source);
@@ -79,6 +82,11 @@ export class TestRunner {
                 testExecutionRequest.setArgPhpUnit('--testsuite', `${parentTestItemDef.getTestSuiteName()}`);
             }
 
+            // If the test queue is being run for a specific tag
+            if (tagId) {
+                testExecutionRequest.setArgPhpUnit('--group', tagId);
+            }
+
             // Add to the list of test executions to be run
             executionRequests.push(testExecutionRequest);
         } else {
@@ -89,7 +97,15 @@ export class TestRunner {
                 let workspaceFolder = vscode.workspace.getWorkspaceFolder(item.uri!);
                 if (currentWorkspaceFolder && workspaceFolder !== currentWorkspaceFolder) {
                     // Execute any tests from the current workspace
-                    executionRequests.push(new TestExecutionRequest(this.settings, currentWorkspaceFolder, this.logger));
+                    let testExecutionRequest = new TestExecutionRequest(this.settings, currentWorkspaceFolder, this.logger);
+
+                    // If the test queue is being run for a specific tag
+                    if (tagId) {
+                        testExecutionRequest.setArgPhpUnit('--group', tagId);
+                    }
+
+                    // Add to the list of test executions to be run
+                    executionRequests.push(testExecutionRequest);
                     executionRequired = false;
                 } else {
                     // Set this as the current workspace folder and start building up the test run queue
@@ -101,7 +117,15 @@ export class TestRunner {
     
             // Clean up final run if required
             if (executionRequired === true && currentWorkspaceFolder) {
-                executionRequests.push(new TestExecutionRequest(this.settings, currentWorkspaceFolder, this.logger));
+                let testExecutionRequest = new TestExecutionRequest(this.settings, currentWorkspaceFolder, this.logger);
+
+                // If the test queue is being run for a specific tag
+                if (tagId) {
+                    testExecutionRequest.setArgPhpUnit('--group', tagId);
+                }
+
+                // Add to the list of test executions to be run
+                executionRequests.push(testExecutionRequest);
             }
         }
 
