@@ -91,7 +91,7 @@ class AttributeTest extends TestCase
         $this->assertTrue(true);
     }
 
-    #[Small]
+    //#[Small]
     public function testSmallAttribute(): void {
         $this->assertTrue(true);
     }

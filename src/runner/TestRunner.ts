@@ -46,86 +46,39 @@ export class TestRunner {
         // Get tag from run profile (if set)
         let tagId = request.profile?.tag?.id;
 
-        // Build the TestItem queue for this test run
         if (request.include) {
             // Test run is only for a subset of test items
-            let parentTestItem: vscode.TestItem = request.include[0];
+            let parentTestItem = request.include[0];
+            let parentTestItemDef = this.itemMap.getTestDefinition(parentTestItem.id)!;
+
+            // Enqueue this TestItem and all of its children
             this.testItemQueue = this.buildTestRunQueue(run, this.testItemQueue, parentTestItem);
 
-            // Get the workspace folder and settings for the parent test
-            let parentTestItemDef = this.itemMap.getTestDefinition(parentTestItem.id)!;
-            let workspaceFolder = vscode.workspace.getWorkspaceFolder(parentTestItem.uri!);
-            if (!workspaceFolder) {
-                this.logger.warn(`Unable to locate workspace folder for ${parentTestItemDef.getWorkspaceFolderUri()}`);
-                return;
-            }
-            let testExecutionRequest = new TestExecutionRequest(this.settings, workspaceFolder, this.logger);
-
-            // Determine whether we are running for a folder, class or method within a class
-            if (parentTestItemDef.getType() === ItemType.namespace) {
-                testExecutionRequest.setTargetClassOrFolder(parentTestItem.uri!);
-            } else if (parentTestItemDef.getType() === ItemType.class) {
-                testExecutionRequest.setTargetClassOrFolder(parentTestItem.uri!);
-            } else if (parentTestItemDef.getType() === ItemType.method) {
-                let dataProviders = parentTestItemDef.getDataProviders();
-                if (dataProviders.length > 0) {
-                    testExecutionRequest.setArgPhpUnit('--filter', new RegExp('::' + parentTestItemDef.getMethodName() + ' .*#.*$').source);
-                } else {
-                    testExecutionRequest.setArgPhpUnit('--filter', new RegExp('::' + parentTestItemDef.getMethodName() + '$').source);
-                }
-                
-                testExecutionRequest.setTargetClassOrFolder(parentTestItem.uri!);
-            }
-
-            // If the test queue is being run under a test suite
-            if (parentTestItemDef.getTestSuiteName()) {
-                testExecutionRequest.setArgPhpUnit('--testsuite', `${parentTestItemDef.getTestSuiteName()}`);
-            }
-
-            // If the test queue is being run for a specific tag
-            if (tagId) {
-                testExecutionRequest.setArgPhpUnit('--group', tagId);
-            }
-
-            // Add to the list of test executions to be run
-            executionRequests.push(testExecutionRequest);
-        } else {
-            // Test run is for all test items (potentially across multiple workspace folders)
-            let executionRequired: boolean = false;
-            let currentWorkspaceFolder: vscode.WorkspaceFolder | undefined;
-            for (let [key, item] of this.ctrl.items) {
-                let workspaceFolder = vscode.workspace.getWorkspaceFolder(item.uri!);
-                if (currentWorkspaceFolder && workspaceFolder !== currentWorkspaceFolder) {
-                    // Execute any tests from the current workspace
-                    let testExecutionRequest = new TestExecutionRequest(this.settings, currentWorkspaceFolder, this.logger);
-
-                    // If the test queue is being run for a specific tag
-                    if (tagId) {
-                        testExecutionRequest.setArgPhpUnit('--group', tagId);
-                    }
-
-                    // Add to the list of test executions to be run
-                    executionRequests.push(testExecutionRequest);
-                    executionRequired = false;
-                } else {
-                    // Set this as the current workspace folder and start building up the test run queue
-                    currentWorkspaceFolder = workspaceFolder;
-                    this.buildTestRunQueue(run, this.testItemQueue, item);
-                    executionRequired = true;
-                }
-            };
-    
-            // Clean up final run if required
-            if (executionRequired === true && currentWorkspaceFolder) {
-                let testExecutionRequest = new TestExecutionRequest(this.settings, currentWorkspaceFolder, this.logger);
-
-                // If the test queue is being run for a specific tag
-                if (tagId) {
-                    testExecutionRequest.setArgPhpUnit('--group', tagId);
-                }
-
-                // Add to the list of test executions to be run
+            // Create TestExecutionRequest for the TestItem and add to the list of executions to be run
+            let testExecutionRequest = TestExecutionRequest.createForTestItem(parentTestItem, parentTestItemDef, this.settings, this.logger, tagId);
+            if (testExecutionRequest) {
                 executionRequests.push(testExecutionRequest);
+            }
+        } else {
+            // Test run is for all test items (potentially across multiple workspaces)
+            let workspaceFolders: vscode.WorkspaceFolder[] = [];
+            for (let [key, parentTestItem] of this.ctrl.items) {
+                // Enqueue this TestItem and all of its children
+                this.testItemQueue = this.buildTestRunQueue(run, this.testItemQueue, parentTestItem);
+
+                // Check if this workspace folder has already been encountered during the run
+                let workspaceFolder = vscode.workspace.getWorkspaceFolder(parentTestItem.uri!);
+                if (workspaceFolder && workspaceFolders.indexOf(workspaceFolder) <= -1) {
+                    workspaceFolders.push(workspaceFolder);
+                }
+            }
+
+            // Create a TestExecutionRequest for each unique workspace folder and add to the list of executions to be run
+            for (let workspaceFolder of workspaceFolders) {
+                let testExecutionRequest = TestExecutionRequest.createForWorkspaceFolder(workspaceFolder, this.settings, this.logger, tagId);
+                if (testExecutionRequest) {
+                    executionRequests.push(testExecutionRequest);
+                }
             }
         }
 
@@ -351,15 +304,26 @@ export class TestRunner {
         });
     }
 
-    private buildTestRunQueue(run: vscode.TestRun, queue: Map<string, vscode.TestItem>, item: vscode.TestItem): Map<string, vscode.TestItem> {
-        // Mark the test as running
+    private buildTestRunQueue(run: vscode.TestRun, queue: Map<string, vscode.TestItem>, item: vscode.TestItem, tagId?: string): Map<string, vscode.TestItem> {
+        // Check if this is a test method
         if (item.canResolveChildren === false) {
-            run.enqueued(item);
+            if (!tagId) {
+                // No tag filter - always enqueue
+                run.enqueued(item);
+            } else {
+                // Check if the TestItem has been tagged with the filter specified
+                for (let tag of item.tags) {
+                    if (tag.id === tagId) {
+                        run.enqueued(item);
+                        break;
+                    }
+                }
+            }
         }
         
         // Add to the queue for later lookup by ID
         queue.set(item.id, item);
-        item.children.forEach(child => this.buildTestRunQueue(run, queue, child));
+        item.children.forEach(child => this.buildTestRunQueue(run, queue, child, tagId));
         return queue;
     }
 }
