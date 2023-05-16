@@ -12,6 +12,7 @@ export class TestItemDefinition {
     private uri: vscode.Uri;
     private workspaceFolderUri?: vscode.Uri;
     private testSuiteName?: string;
+    private testSuiteLabel?: string;
     private testSuiteId?: string;
     private namespaceName?: string;
     private namespaceId?: string;
@@ -21,14 +22,16 @@ export class TestItemDefinition {
     private methodName?: string;
     private methodLabel?: string;
     private methodId?: string;
-    private dataProvider?: string;
+    private dataProviders: string[];
     private range?: vscode.Range;
+    private tags: string[];
 
     constructor(
         type: ItemType,
         uri: vscode.Uri,
         details: {
             testSuiteName?: string,
+            testSuiteLabel?: string,
             testSuiteId?: string,
             namespaceName?: string,
             namespaceId?: string,
@@ -38,12 +41,14 @@ export class TestItemDefinition {
             methodName?: string,
             methodLabel?: string,
             methodId?: string,
-            dataProvider?: string
+            dataProviders?: string[],
+            tags?: string[]
         }
     ) {
         this.type = type;
         this.uri = uri;
         this.testSuiteName = details.testSuiteName;
+        this.testSuiteLabel = details.testSuiteLabel;
         this.testSuiteId = details.testSuiteId;
         this.namespaceName = details.namespaceName;
         this.namespaceId = details.namespaceId;
@@ -53,7 +58,16 @@ export class TestItemDefinition {
         this.methodName = details.methodName;
         this.methodLabel = details.methodLabel;
         this.methodId = details.methodId;
-        this.dataProvider = details.dataProvider;
+
+        this.dataProviders = [];
+        if (details.dataProviders) {
+            this.dataProviders = details.dataProviders;
+        }
+
+        this.tags = [];
+        if (details.tags) {
+            this.tags = details.tags;
+        }
     }
 
     public getType(): ItemType {
@@ -65,6 +79,13 @@ export class TestItemDefinition {
     }
 
     public getTestSuiteName(): string | undefined {
+        return this.testSuiteName;
+    }
+
+    public getTestSuiteLabel(): string | undefined {
+        if (this.testSuiteLabel) {
+            return this.testSuiteLabel;
+        }
         return this.testSuiteName;
     }
 
@@ -110,8 +131,8 @@ export class TestItemDefinition {
         return this.methodId;
     }
 
-    public getDataProvider(): string | undefined {
-        return this.dataProvider;
+    public getDataProviders(): string[] {
+        return this.dataProviders;
     }
 
     public getRange(): vscode.Range | undefined {
@@ -128,6 +149,31 @@ export class TestItemDefinition {
 
     public setWorkspaceFolderUri(uri: vscode.Uri) {
         this.workspaceFolderUri = uri;
+    }
+
+    public addTag(tag: string): void {
+        if (this.tags.includes(tag) !== true) {
+            this.tags.push(tag);
+        }
+    }
+
+    public getTags(): string[] {
+        return this.tags;
+    }
+
+    public setTags(tags: string[]): void {
+        this.tags = tags;
+    }
+
+    public getTestTags(): vscode.TestTag[] {
+        let testTags: vscode.TestTag[] = [];
+        this.tags.forEach(name => {
+            let tag = new vscode.TestTag(name);
+            if (testTags.includes(tag) !== true) {
+                testTags.push(tag);
+            }
+        });
+        return testTags;
     }
 
     public getPhpUnitId(): string {

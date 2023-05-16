@@ -1,0 +1,25 @@
+{
+    "name": "chiefmyron/phpunit-test-workbench-fixtures",
+    "description": "Sample test suite for testing extension",
+    "type": "project",
+    "require-dev": {
+        "phpunit/phpunit": "10.0"
+    },
+    "autoload": {
+        "psr-4": {
+            "Chiefmyron\\TestWorkbench\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Chiefmyron\\TestWorkbench\\": "test/"
+        }
+    },
+    "authors": [
+        {
+            "name": "Andrew Patterson",
+            "email": "patto@live.com.au"
+        }
+    ],
+    "require": {}
+}

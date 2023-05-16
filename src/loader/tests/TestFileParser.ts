@@ -4,14 +4,33 @@ import { Logger } from '../../output';
 import { Settings } from '../../settings';
 import { ItemType, TestItemDefinition } from './TestItemDefinition';
 
-const patternTestdoxComment = new RegExp(/@testdox (.*)/);
 const phpUnitAttributeTest = 'PHPUnit\\Framework\\Attributes\\Test';
 const phpUnitAttributeDataProvider = 'PHPUnit\\Framework\\Attributes\\DataProvider';
+const phpUnitAttributeDataProviderExternal = 'PHPUnit\\Framework\\Attributes\\DataProviderExternal';
+const phpUnitAttributeGroup = 'PHPUnit\\Framework\\Attributes\\Group';
+const phpUnitAttributeSmall = 'PHPUnit\\Framework\\Attributes\\Small';
+const phpUnitAttributeMedium = 'PHPUnit\\Framework\\Attributes\\Medium';
+const phpUnitAttributeLarge = 'PHPUnit\\Framework\\Attributes\\Large';
+const phpUnitAttributeTicket = 'PHPUnit\\Framework\\Attributes\\Ticket';
+
+const patternAnnotationTest = new RegExp(/@test\b/);
+const patternAnnotationTestdox = new RegExp(/@testdox (.*)/);
+const patternAnnotationDataProvider = new RegExp(/@dataProvider (.*)/);
+const patternAnnotationGroup = new RegExp(/@group (.*)/);
+const patternAnnotationTicket = new RegExp(/@ticket (.*)/);
+const patternAnnotationSmall = new RegExp(/@small\b/);
+const patternAnnotationMedium = new RegExp(/@medium\b/);
+const patternAnnotationLarge = new RegExp(/@large\b/);
 
 type TestFileMetadata = {
     namespace?: Namespace, 
     classmap?: Map<string, string>,
     class?: Class
+};
+
+type Annotation = {
+    name: string,
+    values: string[]
 };
 
 export function generateTestItemId(type: ItemType, uri: vscode.Uri, name?: string) {
@@ -188,7 +207,8 @@ export class TestFileParser {
                 namespaceName: meta.namespace?.name,
                 className: className,
                 classLabel: this.extractTestdoxName(phpClass.leadingComments),
-                classId: classId
+                classId: classId,
+                tags: this.extractTagsList(phpClass)
             }
         );
 
@@ -248,7 +268,8 @@ export class TestFileParser {
                 methodName: methodName,
                 methodLabel: this.extractTestdoxName(method.leadingComments),
                 methodId: methodId,
-                dataProvider: this.extractDataProvider(method, meta.classmap)
+                dataProviders: this.extractDataProviders(method, meta.classmap),
+                tags: parentDefinition.getTags().concat(this.extractTagsList(method, meta.classmap))
             }
         );
 
@@ -283,7 +304,7 @@ export class TestFileParser {
         }
 
         // Test method definitions may be identified via the @test dockblock annotation
-        if (this.hasAnnotation(method.leadingComments, '@test') === true) {
+        if (this.hasAnnotation(method.leadingComments, patternAnnotationTest) === true) {
             return true;
         }
 
@@ -308,7 +329,7 @@ export class TestFileParser {
         }
 
         for (let comment of comments) {
-            let label = comment.value.match(patternTestdoxComment)?.at(1);
+            let label = comment.value.match(patternAnnotationTestdox)?.at(1);
             if (label) {
                 return label;
             }
@@ -316,98 +337,195 @@ export class TestFileParser {
         return;
     }
 
-    private extractDataProvider(method: Method, classmap?: Map<string, string>): string | undefined {
-        // Check if data provider has been specified as an attribute (new for PHP 8 / PHPUnit 10)
-        if (this.hasAttribute(method.attrGroups, phpUnitAttributeDataProvider, classmap) === true) {
-            let args = this.extractAttributeParams(method.attrGroups, phpUnitAttributeDataProvider, classmap);
-            if (args.length > 0 && args[0].kind === 'string') {
-                // @ts-ignore This will be a string value
-                return args[0].value;
+    private extractDataProviders(method: Method, classmap?: Map<string, string>): string[] {
+        let dataProviders: string[] = [];
+        const dataProviderAttributes = [
+            phpUnitAttributeDataProvider,
+            phpUnitAttributeDataProviderExternal
+        ];
+        
+        // Check if data providers have been specified as an attribute (new for PHP 8 / PHPUnit 10)
+        let attribs = this.matchAttributes(method.attrGroups, dataProviderAttributes, classmap);
+        attribs.forEach(attrib => {
+            let param = this.extractParameterValue(attrib.args, 0);
+            if (param) {
+                dataProviders.push(param);
             }
+        });
+
+        // NOTE: Attributes take precedence over annotations in PHPUnit 10. If we have found at 
+        // least one value, then annotations are ignored
+        if (dataProviders.length > 0) {
+            return dataProviders;
         }
 
-        // Check if data provider has been specified in a docblock annotation
-        if (this.hasAnnotation(method.leadingComments, '@dataProvider') === true) {
-            return this.extractAnnotationValue(method.leadingComments, '@dataProvider');
-        }
-        return;
+        // Check if data providers have been specified as an annotation
+        return this.extractAnnotationValues(method.leadingComments, patternAnnotationDataProvider);
     }
 
-    private matchAttribute(attributeGroups: AttrGroup[], attribute: string, classmap?: Map<string, string>): Attribute | undefined {
+    private extractTagsList(node: Class | Method, classmap?: Map<string, string>): string[] {
+        let tags: string[] = [];
+        const tagAttributes = [
+            phpUnitAttributeGroup,
+            phpUnitAttributeSmall,
+            phpUnitAttributeMedium,
+            phpUnitAttributeLarge,
+            phpUnitAttributeTicket
+        ];
+        const tagAnnotations = [
+            patternAnnotationGroup,
+            patternAnnotationTicket,
+            patternAnnotationSmall,
+            patternAnnotationMedium,
+            patternAnnotationLarge
+        ];
+
+        // Check for group attributes
+        let attribs = this.matchAttributes(node.attrGroups, tagAttributes, classmap);
+        attribs.forEach(attrib => {
+            // Extract tag value from attribute parameter (covers 'group' and 'ticket' attributes)
+            let tag = this.extractParameterValue(attrib.args, 0);
+
+            // If tag not found, the tag value is the name of the attribute
+            if (!tag) {
+                let attribParts = attrib.name.split('\\');
+                tag = attribParts.pop()?.toLowerCase();
+            }
+
+            // If tag has been found, and not already present in list, add it now
+            if (tag && tags.includes(tag) !== true) {
+                tags.push(tag);
+            }
+        });
+
+        // NOTE: Attributes take precedence over annotations in PHPUnit 10. If we have found at 
+        // least one value, then annotations are ignored
+        if (tags.length > 0) {
+            return tags;
+        }
+
+        let annotations = this.matchAnnotations(node.leadingComments, tagAnnotations);
+        annotations.forEach(annotation => {
+            let tag = undefined;
+
+            // Extract tag value from annotation text (covers '@group' and '@ticket' annotations)
+            if (annotation.values.length > 0) {
+                tag = annotation.values[0].toLowerCase().trim();
+            }
+
+            // If tag not found, the tag value is the name of the annotation
+            if (!tag) {
+                tag = annotation.name.toLowerCase().trim();
+            }
+
+            // If tag has been found, and not already present in list, add it now
+            if (tag && tags.includes(tag) !== true) {
+                tags.push(tag);
+            }
+        });
+
+        return tags;
+    }
+
+    private matchAttributes(attributeGroups: AttrGroup[], attributes: string[], classmap?: Map<string, string>): Attribute[] {
+        let matchedAttribs: Attribute[] = [];
+        attributes.forEach(attrib => {
+            matchedAttribs = matchedAttribs.concat(this.matchAttribute(attributeGroups, attrib, classmap));
+        });
+        return matchedAttribs;
+    }
+
+    private matchAttribute(attributeGroups: AttrGroup[], attribute: string, classmap?: Map<string, string>): Attribute[] {
         let attribs = attributeGroups.reduce((accumulator: Attribute[], group) => accumulator.concat(group.attrs), []);
+
+        let matchedAttribs: Attribute[] = [];
         for (let attrib of attribs) {
             // Check if attribute matches a fully qualified namespace
             if (attrib.name === attribute) {
-                return;
+                matchedAttribs.push(attrib);
+                continue;
             }
 
             // Perform additional checks if a classmap has been provided
             if (classmap && classmap.has(attribute)) {
                 // Check if attribute matches an aliased class
                 if (attrib.name === classmap.get(attribute)) {
-                    return attrib;
+                    matchedAttribs.push(attrib);
+                    continue;
                 }
 
                 // Check if attribute matches an unaliased class
                 let attributeParts = attribute.split('\\');
                 if (attrib.name === attributeParts.pop()) {
-                    return attrib;
+                    matchedAttribs.push(attrib);
+                    continue;
                 }
             }
         }
-        return;
+        return matchedAttribs;
     }
 
     private hasAttribute(attributeGroups: AttrGroup[], attribute: string, classmap?: Map<string, string>): boolean {
         let attrib = this.matchAttribute(attributeGroups, attribute, classmap);
-        if (attrib) {
+        if (attrib.length > 0) {
             return true;
         }
         return false;
     }
 
-    private extractAttributeParams(attributeGroups: AttrGroup[], attribute: string, classmap?: Map<string, string>): Parameter[] {
-        let attrib = this.matchAttribute(attributeGroups, attribute, classmap);
-        if (!attrib) {
-            return [];
-        }
-
-        return attrib.args;
+    private matchAnnotations(comments: CommentBlock[] | Comment [] | null, annotations: RegExp[]): Annotation[] {
+        let matchedAnnotations: Annotation[] = [];
+        annotations.forEach(annotation => {
+            matchedAnnotations = matchedAnnotations.concat(this.matchAnnotation(comments, annotation));
+        });
+        return matchedAnnotations;
     }
 
-    private matchAnnotation(comments: CommentBlock[] | Comment[] | null, annotation: string): RegExpMatchArray | null {
+    private matchAnnotation(comments: CommentBlock[] | Comment[] | null, annotation: RegExp): Annotation[] {
+        let annotations: Annotation[] = [];
         if (!comments) {
-            return null;
-        }
-
-        // Strip off leading '@', if it has been provided
-        if (annotation.startsWith('@')) {
-            annotation = annotation.substring(1);
+            return annotations;
         }
         
         // Check each comment for the existence of the annotation
-        const patternAnnotation = new RegExp('@' + annotation + '( .*)?');
         for (let comment of comments) {
-            let results = comment.value.match(patternAnnotation);
+            let results = comment.value.match(annotation);
             if (results) {
-                return results;
+                // Extract annotation name from result
+                let match = results.shift()!;
+                let value = match.split(" ")[0].replace("@", "");
+                annotations = annotations.concat({name: value, values: results});
             }
         }
-        return null;
+        return annotations;
     }
 
-    private hasAnnotation(comments: CommentBlock[] | Comment[] | null, annotation: string): boolean {
-        if (this.matchAnnotation(comments, annotation) !== null) {
+    private hasAnnotation(comments: CommentBlock[] | Comment[] | null, annotation: RegExp): boolean {
+        if (this.matchAnnotation(comments, annotation).length > 0) {
             return true;
         }
         return false;
     }
 
-    private extractAnnotationValue(comments: CommentBlock[] | Comment [] | null, annotation: string): string | undefined {
+    private extractAnnotationValues(comments: CommentBlock[] | Comment [] | null, annotation: RegExp): string[] {
+        let values: string[] = [];
         let matchedAnnotations = this.matchAnnotation(comments, annotation);
-        if (matchedAnnotations !== null && matchedAnnotations.length > 1) {
-            return matchedAnnotations[1].trim();
+        matchedAnnotations.forEach(annotation => {
+            if (annotation.values.length > 0) {
+                values.push(annotation.values[0].trim());
+            }
+        });
+        return values;
+    }
+
+    private extractParameterValue(parameters: Parameter[], index: number): string | undefined {
+        if (!parameters || parameters.length <= 0 || !parameters[index]) {
+            return;
         }
-        return;
+        if (parameters[index].kind !== 'string' || parameters[index].value === null) {
+            return;
+        }
+
+        return parameters[index].value!.toString();
     }
 }

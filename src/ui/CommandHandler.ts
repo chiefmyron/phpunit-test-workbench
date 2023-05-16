@@ -4,6 +4,7 @@ import { TestItemQuickPickItem } from './TestItemQuickPickItem';
 import { TestFileLoader } from '../loader/TestFileLoader';
 import { TestItemMap } from '../loader/tests/TestItemMap';
 import { TestRunner } from "../runner/TestRunner";
+import { ItemType } from '../loader/tests/TestItemDefinition';
 
 export class CommandHandler {
     private loader: TestFileLoader;
@@ -54,7 +55,7 @@ export class CommandHandler {
                 }
 
                 // Find test item definition for a method at the current cursor position
-                testItem = this.itemMap.getMethodTestItem(editor.document.uri, editor.selection.active);
+                testItem = this.itemMap.getTestItemForFilePosition(editor.document.uri, editor.selection.active, ItemType.method);
                 if (!testItem) {
                     this.logger.warn(`Unable to find a test item definition for a method at the current cursor position. Aborting test run.`, true);
                     return;
@@ -81,7 +82,7 @@ export class CommandHandler {
                 }
 
                 // Find test item definition for a class at the current cursor position
-                testItem = this.itemMap.getClassTestItem(editor.document.uri, editor.selection.active);
+                testItem = this.itemMap.getTestItemForFilePosition(editor.document.uri, editor.selection.active, ItemType.class);
                 if (!testItem) {
                     this.logger.warn(`Unable to find a test item definition for a class at the current cursor position. Aborting test run.`, true);
                     return;
@@ -96,16 +97,19 @@ export class CommandHandler {
             case 'run.suite':
             case 'debug.suite':
                 // Check that test suites have been detected
-                if (this.itemMap.getTestSuites().length <= 0) {
+                let testSuiteItems = this.itemMap.getTestItemsForSuites();
+                if (testSuiteItems.length <= 0) {
                     this.logger.warn(`No test suite definitions have been found. Aborting test run.`, true);
                     return;
                 }
 
                 // Get a list of available test suites
                 let options: vscode.QuickPickItem[] = [];
-                for (let testItem of this.itemMap.getTestSuites()) {
-                    let testItemDef = this.itemMap.getTestItemDef(testItem)!;
-                    options.push(new TestItemQuickPickItem(testItem.id, testItemDef.getTestSuiteName()!, testItem.uri!.fsPath));
+                for (let item of testSuiteItems) {
+                    let definition = this.itemMap.getTestDefinition(item.id);
+                    if (definition) {
+                        options.push(new TestItemQuickPickItem(item.id, definition.getTestSuiteName()!, item.uri!.fsPath));
+                    }
                 }
 
                 // Build quick pick to display known TestSuites

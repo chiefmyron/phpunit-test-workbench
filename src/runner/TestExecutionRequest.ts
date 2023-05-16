@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import { Logger } from '../output';
 import { Settings } from '../settings';
+import { ItemType, TestItemDefinition } from '../loader/tests/TestItemDefinition';
 
 export class TestExecutionRequest {
     private settings: Settings;
@@ -24,6 +25,74 @@ export class TestExecutionRequest {
         this.pathBinaryPhp = '';
         this.pathBinaryPhpUnit = '';
         this.pathConfigPhpUnit = '';
+    }
+
+    public static createForWorkspaceFolder(
+        workspaceFolder: vscode.WorkspaceFolder,
+        settings: Settings,
+        logger: Logger,
+        tagId?: string
+    ): TestExecutionRequest | undefined {
+        // Create initial request
+        let request = new TestExecutionRequest(settings, workspaceFolder, logger);
+
+        // If the test queue is being run for a specific tag
+        if (tagId) {
+            request.setArgPhpUnit('--group', tagId);
+        }
+
+        return request;
+    }
+
+    public static createForTestItem(
+        item: vscode.TestItem,
+        definition: TestItemDefinition,
+        settings: Settings,
+        logger: Logger,
+        tagId?: string
+    ): TestExecutionRequest | undefined {
+        if (!item.uri) {
+            logger.warn(`Target TestItem does not have a valid URI and cannot be executed`);
+            return;
+        }
+
+        // Determine workspace folder for target TestItem
+        let workspaceFolder = vscode.workspace.getWorkspaceFolder(item.uri);
+        if (!workspaceFolder) {
+            logger.warn(`Unable to locate workspace folder for ${item.uri}`);
+            return;
+        }
+
+        // Create initial request
+        let request = new TestExecutionRequest(settings, workspaceFolder, logger);
+
+        // Add filters
+        if (definition.getType() === ItemType.namespace) {
+            request.setTargetClassOrFolder(item.uri);
+        } else if (definition.getType() === ItemType.class) {
+            request.setTargetClassOrFolder(item.uri);
+        } else if (definition.getType() === ItemType.method) {
+            let dataProviders = definition.getDataProviders();
+            if (dataProviders.length > 0) {
+                request.setArgPhpUnit('--filter', new RegExp('::' + definition.getMethodName() + ' .*#.*$').source);
+            } else {
+                request.setArgPhpUnit('--filter', new RegExp('::' + definition.getMethodName() + '$').source);
+            }
+            
+            request.setTargetClassOrFolder(item.uri!);
+        }
+
+        // If the test queue is being run under a test suite
+        if (definition.getTestSuiteName()) {
+            request.setArgPhpUnit('--testsuite', `${definition.getTestSuiteName()}`);
+        }
+
+        // If the test queue is being run for a specific tag
+        if (tagId) {
+            request.setArgPhpUnit('--group', tagId);
+        }
+
+        return request;
     }
 
     public getWorkspaceFolder(): vscode.WorkspaceFolder {

@@ -1,5 +1,7 @@
 out
 dist
+src/test/fixtures/vendor
+src/test/fixtures/composer.lock
 node_modules
 .vscode-test/
 *.vsix
