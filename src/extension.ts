@@ -77,7 +77,7 @@ export function activate(context: vscode.ExtensionContext) {
 
     // Create command handler
     logger.trace(`Creating command handler`);
-    const commandHandler = new CommandHandler(testFileLoader, testItemMap, runner, logger);
+    const commandHandler = new CommandHandler(testFileLoader, testItemMap, testTagProfileMap, runner, logger);
 
     // Refresh handler
     ctrl.refreshHandler = async () => {
@@ -119,18 +119,23 @@ export function activate(context: vscode.ExtensionContext) {
     context.subscriptions.push(
         vscode.commands.registerCommand('phpunit-test-workbench.runMethod', () => commandHandler.execute('run.method')),
         vscode.commands.registerCommand('phpunit-test-workbench.runClass', () => commandHandler.execute('run.class')),
+        vscode.commands.registerCommand('phpunit-test-workbench.runClassWithTag', () => commandHandler.execute('run.class.tag')),
         vscode.commands.registerCommand('phpunit-test-workbench.runSuite', () => commandHandler.execute('run.suite')),
+        vscode.commands.registerCommand('phpunit-test-workbench.runSuiteWithTag', () => commandHandler.execute('run.suite.tag')),
         vscode.commands.registerCommand('phpunit-test-workbench.runAll', () => commandHandler.execute('run.all')),
+        vscode.commands.registerCommand('phpunit-test-workbench.runAllWithTag', () => commandHandler.execute('run.all.tag')),
         vscode.commands.registerCommand('phpunit-test-workbench.debugMethod', () => commandHandler.execute('debug.method')),
         vscode.commands.registerCommand('phpunit-test-workbench.debugClass', () => commandHandler.execute('debug.class')),
+        vscode.commands.registerCommand('phpunit-test-workbench.debugClassWithTag', () => commandHandler.execute('debug.class.tag')),
         vscode.commands.registerCommand('phpunit-test-workbench.debugSuite', () => commandHandler.execute('debug.suite')),
-        vscode.commands.registerCommand('phpunit-test-workbench.debugAll', () => commandHandler.execute('debug.all'))
+        vscode.commands.registerCommand('phpunit-test-workbench.debugSuiteWithTag', () => commandHandler.execute('debug.suite.tag')),
+        vscode.commands.registerCommand('phpunit-test-workbench.debugAll', () => commandHandler.execute('debug.all')),
+        vscode.commands.registerCommand('phpunit-test-workbench.debugAllWithTag', () => commandHandler.execute('debug.all.tag'))
     );
 
     // Register event handlers
     context.subscriptions.push(
         vscode.workspace.onDidChangeConfiguration(e => updateConfigurationSettings(settings, testFileLoader)),
-        //vscode.workspace.onDidOpenTextDocument(document => testFileLoader.parseOpenDocument(document)),
         vscode.workspace.onDidChangeTextDocument(e => testFileLoader.parseOpenDocument(e.document))
     );
 

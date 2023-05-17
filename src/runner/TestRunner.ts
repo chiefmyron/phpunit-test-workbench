@@ -5,7 +5,6 @@ import { Logger } from '../output';
 import { TestRunResultParser } from './TestRunResultParser';
 import { TestExecutionRequest } from './TestExecutionRequest';
 import { TestRunResultMap } from './TestRunResultMap';
-import { ItemType } from '../loader/tests/TestItemDefinition';
 import { TestItemMap } from '../loader/tests/TestItemMap';
 import { DebugConfigQuickPickItem } from '../ui/DebugConfigQuickPickItem';
 import { TestResultStatus } from './TestResult';
@@ -46,13 +45,13 @@ export class TestRunner {
         // Get tag from run profile (if set)
         let tagId = request.profile?.tag?.id;
 
-        if (request.include) {
+        if (request.include && request.include.length > 0) {
             // Test run is only for a subset of test items
             let parentTestItem = request.include[0];
             let parentTestItemDef = this.itemMap.getTestDefinition(parentTestItem.id)!;
 
             // Enqueue this TestItem and all of its children
-            this.testItemQueue = this.buildTestRunQueue(run, this.testItemQueue, parentTestItem);
+            this.testItemQueue = this.buildTestRunQueue(run, this.testItemQueue, parentTestItem, tagId);
 
             // Create TestExecutionRequest for the TestItem and add to the list of executions to be run
             let testExecutionRequest = TestExecutionRequest.createForTestItem(parentTestItem, parentTestItemDef, this.settings, this.logger, tagId);
@@ -64,7 +63,7 @@ export class TestRunner {
             let workspaceFolders: vscode.WorkspaceFolder[] = [];
             for (let [key, parentTestItem] of this.ctrl.items) {
                 // Enqueue this TestItem and all of its children
-                this.testItemQueue = this.buildTestRunQueue(run, this.testItemQueue, parentTestItem);
+                this.testItemQueue = this.buildTestRunQueue(run, this.testItemQueue, parentTestItem, tagId);
 
                 // Check if this workspace folder has already been encountered during the run
                 let workspaceFolder = vscode.workspace.getWorkspaceFolder(parentTestItem.uri!);
