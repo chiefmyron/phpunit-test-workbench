@@ -389,7 +389,7 @@ export class TestFileParser {
             // If tag not found, the tag value is the name of the attribute
             if (!tag) {
                 let attribParts = attrib.name.split('\\');
-                tag = attribParts.pop()?.toLowerCase();
+                tag = attribParts.pop();
             }
 
             // If tag has been found, and not already present in list, add it now
@@ -410,12 +410,12 @@ export class TestFileParser {
 
             // Extract tag value from annotation text (covers '@group' and '@ticket' annotations)
             if (annotation.values.length > 0) {
-                tag = annotation.values[0].toLowerCase().trim();
+                tag = annotation.values[0].trim();
             }
 
             // If tag not found, the tag value is the name of the annotation
             if (!tag) {
-                tag = annotation.name.toLowerCase().trim();
+                tag = annotation.name.trim();
             }
 
             // If tag has been found, and not already present in list, add it now
