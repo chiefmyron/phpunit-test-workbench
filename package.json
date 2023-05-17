@@ -34,15 +34,27 @@
       },
       {
         "command": "phpunit-test-workbench.runClass",
-        "title": "PHPUnit: Run test class"
+        "title": "PHPUnit: Run all tests in class"
+      },
+      {
+        "command": "phpunit-test-workbench.runClassWithTag",
+        "title": "PHPUnit: Run all tests in class with tag"
       },
       {
         "command": "phpunit-test-workbench.runSuite",
-        "title": "PHPUnit: Run test suite"
+        "title": "PHPUnit: Run all tests in suite"
+      },
+      {
+        "command": "phpunit-test-workbench.runSuiteWithTag",
+        "title": "PHPUnit: Run all tests in suite with tag"
       },
       {
         "command": "phpunit-test-workbench.runAll",
         "title": "PHPUnit: Run all tests"
+      },
+      {
+        "command": "phpunit-test-workbench.runAllWithTag",
+        "title": "PHPUnit: Run all tests with tag"
       },
       {
         "command": "phpunit-test-workbench.debugMethod",
@@ -50,15 +62,27 @@
       },
       {
         "command": "phpunit-test-workbench.debugClass",
-        "title": "PHPUnit: Debug test class"
+        "title": "PHPUnit: Debug all tests in class"
+      },
+      {
+        "command": "phpunit-test-workbench.debugClassWithTag",
+        "title": "PHPUnit: Debug all tests in class with tag"
       },
       {
         "command": "phpunit-test-workbench.debugSuite",
-        "title": "PHPUnit: Debug test suite"
+        "title": "PHPUnit: Debug all tests in suite"
+      },
+      {
+        "command": "phpunit-test-workbench.debugSuiteWithTag",
+        "title": "PHPUnit: Debug all tests in suite with tag"
       },
       {
         "command": "phpunit-test-workbench.debugAll",
         "title": "PHPUnit: Debug all tests"
+      },
+      {
+        "command": "phpunit-test-workbench.debugAllWithTag",
+        "title": "PHPUnit: Debug all tests with tag"
       }
     ],
     "configuration": {

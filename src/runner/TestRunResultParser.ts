@@ -34,7 +34,6 @@ export class TestRunResultParser extends vscode.EventEmitter<any> {
     private logger: Logger;
     private messageQueue: string[];
     private result: TestResult | undefined;
-    //private results: TestRunResult;
     private resultMap: TestRunResultMap;
     private buffer: string;
     private _isParsing: boolean;
@@ -53,7 +52,6 @@ export class TestRunResultParser extends vscode.EventEmitter<any> {
         this.settings = settings;
         this.logger = logger;
         this.messageQueue = [];
-        //this.results = new TestRunResult();
         this.resultMap = new TestRunResultMap();
         this.buffer = '';
         this._isParsing = false;
