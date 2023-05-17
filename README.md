@@ -10,6 +10,7 @@ An extension to integrate PHPUnit with the native Test Explorer functionality wi
   * By namespace
   * By test suite (as defined in your `phpunit.xml` configuration file)
   * Simple list of files and methods
+* Filter and run your tests by test group annotations or attributes
 * Errors appear as a peek within the editor
 * History of test run results and execution times is maintained
 * Includes commands and hotkeys to allow quick running of test or test suites
@@ -29,12 +30,18 @@ An extension to integrate PHPUnit with the native Test Explorer functionality wi
 |-------|--|-----------|
 |__PHPUnit: Run test method__|`phpunit-test-workbench.runMethod`|If the cursor is located within a test method, execute only that test method.|
 |__PHPUnit: Run test class__|`phpunit-test-workbench.runClass`|If the active editor is for a test class, execute all test methods within the class.|
+|__PHPUnit: Run test class with tag__|`phpunit-test-workbench.runClassWithTag`|If the active editor is for a test class, execute all test methods within the class tagged with the selected group.|
 |__PHPUnit: Run test suite__|`phpunit-test-workbench.runSuite`|Display a dialog allowing the user to select from the list of test suites found in configuration files. All test methods within the class will be executed.|
-|__PHPUnit: Run all tests__|`phpunit-test-workbench.runAll`|Run all tests identified in the Test Explorer|
+|__PHPUnit: Run test suite with tag__|`phpunit-test-workbench.runSuiteWithTag`|Display a dialog allowing the user to select from the list of test suites found in configuration files. All test methods tagged with the selected group within the test suite will be executed.|
+|__PHPUnit: Run all tests__|`phpunit-test-workbench.runAll`|Run all tests identified in the Test Explorer.|
+|__PHPUnit: Run all tests with tag__|`phpunit-test-workbench.runAll`|Run all tests identified in the Test Explorer tagged with the selected group.|
 |__PHPUnit: Debug test method__|`phpunit-test-workbench.debugMethod`|If the cursor is located within a test method, execute only that test method using the debugger.|
 |__PHPUnit: Debug test class__|`phpunit-test-workbench.debugClass`|If the active editor is for a test class, debug all test methods within the class.|
-|__PHPUnit: Debug test suite__|`phpunit-test-workbench.debugSuite`|Display a dialog allowing the user to select from the list of test suites found in configuration files. All test methods within the class will be executed using the debugger.|
-|__PHPUnit: Debug all tests__|`phpunit-test-workbench.debugAll`|Debug all tests identified in the Test Explorer|
+|__PHPUnit: Debug test class with tag__|`phpunit-test-workbench.debugClassWithTag`|If the active editor is for a test class, debug all test methods within the class tagged with the selected group.|
+|__PHPUnit: Debug test suite__|`phpunit-test-workbench.debugSuite`|Display a dialog allowing the user to select from the list of test suites found in configuration files. All test methods within the test suite will be executed using the debugger.|
+|__PHPUnit: Debug test suite with tag__|`phpunit-test-workbench.debugSuiteWithTag`|Display a dialog allowing the user to select from the list of test suites found in configuration files. All test methods tagged with the selected group within the suite will be executed using the debugger.|
+|__PHPUnit: Debug all tests__|`phpunit-test-workbench.debugAll`|Debug all tests identified in the Test Explorer.|
+|__PHPUnit: Debug all tests with tag__|`phpunit-test-workbench.debugAllWithTag`|Debug all tests identified in the Test Explorer tagged with the selected group.|
 
 ## Configuration options
 |Option|Description|
@@ -61,6 +68,9 @@ An extension to integrate PHPUnit with the native Test Explorer functionality wi
 ### Group tests by test suite
 ![Group tests by test suite](docs/images/example-test-suites.gif)
 
+### Filter tests by tags
+![Group tests by test suite](docs/images/example-test-tagging.gif)
+
 ### Display of failed tests
 ![Display of failed tests](docs/images/example-failed-test-peek.gif)
 
@@ -71,6 +81,13 @@ An extension to integrate PHPUnit with the native Test Explorer functionality wi
 ![Execute tests via commands](docs/images/example-commands.gif)
 
 ## Release notes
+### v0.5.0 - 2023-05-17
+* __NEW:__ Use @testdox annotation as the label for test classes and methods ([#60](https://github.com/chiefmyron/phpunit-test-workbench/issues/60))
+* __NEW:__ Add support for the @group annotation and attribute (and aliases) ([#61](https://github.com/chiefmyron/phpunit-test-workbench/issues/61))
+* __NEW:__ Add commands for running tests with a specific flag ([#69](https://github.com/chiefmyron/phpunit-test-workbench/issues/69))
+* __CHANGED:__ Add support for recording results for test methods using a data provider ([#55](https://github.com/chiefmyron/phpunit-test-workbench/issues/55))
+* __FIXED:__ Fix build process so that php-parser dependency is packaged for node ([#8](https://github.com/chiefmyron/phpunit-test-workbench/issues/8))
+
 ### v0.4.2 - 2023-03-29
 * __FIXED:__ Namespace folder locations not being correctly identified on Remote Workspaces - for real this time ([#58](https://github.com/chiefmyron/phpunit-test-workbench/issues/58))
 

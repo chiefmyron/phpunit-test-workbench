@@ -632,7 +632,7 @@ export class TestFileLoader {
         // Verify that the target namespace directory exists
         let targetNamespaceUri = workspaceFolder.uri.with({ path: namespacePrefixPath + '/' + normalisedClassNamespace.replace(/\\/g, '/')});
         try {
-            let namespaceFolderStats = await vscode.workspace.fs.stat(targetNamespaceUri);
+            await vscode.workspace.fs.stat(targetNamespaceUri);
         } catch (error: any) {
             this.logger.warn(`Directory not found for namespace '${classNamespace}' (Directory should be: ${targetNamespaceUri.fsPath})`);
             if (error instanceof vscode.FileSystemError) {
@@ -658,7 +658,7 @@ export class TestFileLoader {
 
             // Find or create TestItem for namespace component part
             let id = generateTestItemId(ItemType.namespace, namespacePartUri);
-            let item = this.getExistingTestItem(id, parent);
+            let item = this.getExistingTestItem(id);
 
             // If a TestItem does not already exist for the prefix, create it now
             if (!item) {
@@ -702,21 +702,35 @@ export class TestFileLoader {
         }
 
         // Check if TestItem has already been created for the class
-        let item = this.getExistingTestItem(id, parent);
+        let item = this.getExistingTestItem(id);
         if (item) {
             this.logger.trace('- Existing TestItem found for class: ' + label);
+            let existingDefinition = this.testItemMap.getTestDefinition(id);
 
-            // Always update the label, in case it has been modified
-            item.label = label;
-            if (parent) {
-                // FIX FOR #47: If this class already exists as a child of a different parent 
-                // (i.e. the namespace for the class has changed), remove it from the old parent
-                let existingClassTestItem = this.testItemMap.getTestItem(id);
-                if (existingClassTestItem && existingClassTestItem.parent && existingClassTestItem.parent.id !== parent.id) {
-                    this.removeTestItem(existingClassTestItem);
-                }
+            // Check if namespace for this class has been modified
+            let replaceTestItem = false;
+            if (parent && item.parent && parent.id !== item.parent.id) {
+                // Class has moved from one valid namespace to another
+                replaceTestItem = true;
+            } else if (existingDefinition && existingDefinition.getNamespaceName() !== definition.getNamespaceName()) {
+                // Class has moved from or to an invalid namespace
+                replaceTestItem = true;
             }
-            return item;
+
+            // If we don't need to replace the TestItem, update with the latest details from the file
+            if (replaceTestItem === false) {
+                item.label = label;
+                item.range = definition.getRange();
+                this.testItemMap.set(item, definition);
+                return item;
+            }
+
+            // If we have reached this place, we need to replace the TestItem because the parent has changed
+            this.logger.trace('- Existing TestItem needs to be replaced!');
+            for (let [id, child] of item.children) {
+                this.removeTestItem(child);
+            }
+            this.removeTestItem(item);
         }
 
         // Create new TestItem for the class
@@ -732,12 +746,13 @@ export class TestFileLoader {
         let label = definition.getMethodLabel()!;
 
         // Check if TestItem has already been created for the method
-        let item = this.getExistingTestItem(id, parent);
+        let item = this.getExistingTestItem(id);
         if (item) {
             this.logger.trace('- Existing TestItem found for method: ' + label);
 
-            // Update label and definition
+            // Update label and definition to match latest details from the file
             item.label = label;
+            item.range = definition.getRange();
             this.testItemMap.set(item, definition);
             return item;
         }
@@ -750,11 +765,8 @@ export class TestFileLoader {
         return item;
     }
 
-    private getExistingTestItem(id: string, parent?: vscode.TestItem): vscode.TestItem | undefined {
-        if (parent) {
-            return parent.children.get(id);
-        } 
-        return this.ctrl.items.get(id);
+    private getExistingTestItem(id: string): vscode.TestItem | undefined {
+        return this.testItemMap.getTestItem(id);
     }
 
     private addTestItem(
