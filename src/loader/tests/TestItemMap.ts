@@ -58,13 +58,9 @@ export class TestItemMap {
             return;
         }
 
-        // Remove TestItem from the file map
+        // Remove TestItem from the file and tag maps
         this.removeItemFromFileMap(item);
-
-        // Remove TestItem from tag map
-        definition.getTestTags().forEach(tag => {
-            this.removeItemFromTagMap(item!, tag);
-        });
+        this.removeItemFromTagMap(item);
 
         // If this is a test suite, remove it from the list
         if (definition.getType() === ItemType.testsuite) {
@@ -187,14 +183,10 @@ export class TestItemMap {
 
     private setItemTestTags(item: vscode.TestItem, tags: vscode.TestTag[]) {
         // Remove the TestItem from any existing tags in the reverse map
-        for (let tag of item.tags) {
-            this.removeItemFromTagMap(item, tag);
-        }
-
-        // Reset item tags to empty
-        item.tags = [];
+        this.removeItemFromTagMap(item);
 
         // Populate tags from supplied array
+        item.tags = [];
         for (let tag of tags) {
             // Add tag to TestItem
             item.tags = [...item.tags, tag];
@@ -220,21 +212,23 @@ export class TestItemMap {
         this.testTagMap.set(tag.id, tagTestItems);
     }
 
-    private removeItemFromTagMap(item: vscode.TestItem, tag: vscode.TestTag): void {
-        let tagTestItems = this.getTestItemsForTag(tag);
-        tagTestItems.splice(tagTestItems.indexOf(item!), 1);
-        this.testTagMap.set(tag.id, tagTestItems);
+    private removeItemFromTagMap(item: vscode.TestItem): void {
+        this.testTagMap.forEach((taggedTestItems, tagId) => {
+            // Remove from the list of test items for this tag (if it is present)
+            let itemIdx = taggedTestItems.indexOf(item);
+            if (itemIdx > -1) {
+                taggedTestItems.splice(itemIdx, 1);
+            }
+            this.testTagMap.set(tagId, taggedTestItems);
 
-        // If there are no test items remaining for the tag, remove the run profile for the tag
-        if (tagTestItems.length) {
-            // Remove tag from the test item map
-            this.testTagMap.delete(tag.id);
-
-            // Fire event for removal of tag
-            this._onTestTagRemoved.fire(
-                new TestTagRemovedEvent(tag.id)
-            );
-        }
+            // If there are no test items remaining for the tag, remove the run profile for the tag
+            if (taggedTestItems.length <= 0) {
+                this.testTagMap.delete(tagId);
+                this._onTestTagRemoved.fire(
+                    new TestTagRemovedEvent(tagId)
+                );
+            }
+        });
     }
 
     /***********************************************************************

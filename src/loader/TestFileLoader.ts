@@ -101,9 +101,6 @@ export class TestFileLoader {
         this.testItemMap.clear();
         this.namespaceMap.clear();
 
-        // Remove any tag-specific run profiles
-        // TODO
-
         // Re-initialise the workspace
         this.initializeWorkspace();
     }
@@ -734,8 +731,19 @@ export class TestFileLoader {
         let id = definition.getMethodId()!;
         let label = definition.getMethodLabel()!;
 
+        // Check if TestItem has already been created for the method
+        let item = this.getExistingTestItem(id, parent);
+        if (item) {
+            this.logger.trace('- Existing TestItem found for method: ' + label);
+
+            // Update label and definition
+            item.label = label;
+            this.testItemMap.set(item, definition);
+            return item;
+        }
+
         // Create new TestItem for the method
-        let item = this.addTestItem(id, label, definition, definition.getUri(), parent);
+        item = this.addTestItem(id, label, definition, definition.getUri(), parent);
         item.range = definition.getRange();
         item.canResolveChildren = false;
         this.logger.trace('- Created new TestItem for method: ' + label);
