@@ -281,12 +281,17 @@ export class TestFileLoader {
     ) {
         this.logger.trace('[File Loader] Parse workspace folder test files');
 
+        let statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left);
+        statusBarItem.name = 'PHPUnit';
+        statusBarItem.text = '$(loading~spin) Scanning workspace for tests...';
+        statusBarItem.show();
         for (const pattern of patterns) {
             const testFileUris = await vscode.workspace.findFiles(pattern);
             for (const testFileUri of testFileUris) {
                 await this.parseTestFile(testFileUri, workspaceFolder, testSuite);
             }
         }
+        statusBarItem.dispose();
     }
 
     /***********************************************************************/
