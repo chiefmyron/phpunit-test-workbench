@@ -144,11 +144,28 @@ export class TestFileLoader {
     /* Workspace file system watcher operations                            */
     /***********************************************************************/
 
+
+
+//SIMPLIFY WATCHERS - ANYTHING WITHIN A WORKSPACE FOLDER USING A RECURSIVE GLOB PATTERN (e.g. test files)
+//IS IGNORED AND IS CAPTURED AS PART OF A STANDARD onChange / onDelete EVENT
+
+
+
     private setWatchersForConfigFiles(
         workspaceFolder: vscode.WorkspaceFolder,
         pattern: vscode.RelativePattern
     ) {
         // Set watcher for new, changed or deleted PHPUnit config files within the workspace
+        this.logger.trace(`[File Loader] Evaluating PHPUnit config file watcher for pattern: ${pattern.pattern}`);
+        if (vscode.workspace.getWorkspaceFolder(pattern.baseUri) !== undefined) {
+            // Pattern refers to a location within a workspace folder - this will already be caught by VS Code's standard
+            // workspace file watcher - no need to add it separately
+            this.logger.info(`[File Loader] Config file pattern refers to base URI ${pattern.baseUri.toString()} which is within an existing workspace folder - pattern not added to watcher`);
+            return;
+        }
+
+        // Config file pattern is outside a workspace folder - create a dedicated file watcher for the pattern
+        this.logger.trace(`[File Loader] Adding PHPUnit config file watcher for pattern: ${pattern.pattern}`);
         const watcher = vscode.workspace.createFileSystemWatcher(pattern);
 
         // Add event handler to clean up test suites on config file delete
@@ -163,6 +180,16 @@ export class TestFileLoader {
         pattern: vscode.RelativePattern
     ) {
         // Set watcher for new, changed or deleted composer.json files within the workspace
+        this.logger.trace(`[File Loader] Evaluating composer file watcher for pattern: ${pattern.pattern}`);
+        if (vscode.workspace.getWorkspaceFolder(pattern.baseUri) !== undefined) {
+            // Pattern refers to a location within a workspace folder - this will already be caught by VS Code's standard
+            // workspace file watcher - no need to add it separately
+            this.logger.info(`[File Loader] Composer file pattern refers to base URI ${pattern.baseUri.toString()} which is within an existing workspace folder - pattern not added to watcher`);
+            return;
+        }
+
+        // Composer file pattern is outside a workspace folder - create a dedicated file watcher for the pattern
+        this.logger.trace(`[File Loader] Adding composer file watcher for pattern: ${pattern.pattern}`);
         const watcher = vscode.workspace.createFileSystemWatcher(pattern);
 
         // Add event handler to clean up test suites on config file delete
@@ -179,6 +206,16 @@ export class TestFileLoader {
     ) {
         for (let pattern of patterns) {
             // Set watcher for new, changed or deleted test files within the workspace
+            this.logger.trace(`[File Loader] Evaluating test file watcher for pattern: ${pattern.pattern}`);
+            if (vscode.workspace.getWorkspaceFolder(pattern.baseUri) !== undefined) {
+                // Pattern refers to a location within a workspace folder - this will already be caught by VS Code's standard
+                // workspace file watcher - no need to add it separately
+                this.logger.info(`[File Loader] Test file pattern refers to base URI ${pattern.baseUri.toString()} which is within an existing workspace folder - pattern not added to watcher`);
+                return;
+            }
+
+            // Test file pattern is outside a workspace folder - create a dedicated file watcher for the pattern
+            this.logger.trace(`[File Loader] Adding test file watcher for pattern: ${pattern.pattern}`);
             const watcher = vscode.workspace.createFileSystemWatcher(pattern);
 
             // Set file related event handlers
@@ -295,10 +332,12 @@ export class TestFileLoader {
     }
 
     /***********************************************************************/
-    /* Wrapper for opening a document of unknown type                      */
+    /* Wrapper for parsing a text document of unknown type - this is the   */
+    /* function that will be called on any text document changes for files */
+    /* within a workspace folder that is monitored by VS Code              */
     /***********************************************************************/
 
-    public async parseOpenDocument(document: vscode.TextDocument) {
+    public async handleChangedTextDocument(document: vscode.TextDocument) {
         // Only parse files from within a workspace folder
         let workspaceFolder = vscode.workspace.getWorkspaceFolder(document.uri);
         if (!workspaceFolder) {
@@ -331,8 +370,88 @@ export class TestFileLoader {
         if (this.settings.isUsingTestSuiteDefinitions() === true) {
             let testSuite  = this.findSuiteTestItemForTestDocument(workspaceFolder, document);
             this.parseTestDocument(document, workspaceFolder, testSuite);
+            return;
         }
 
+        // Check if the file is a unit test as defined by available patterns
+        const patternTests = this.getLocatorPatternsTestFiles(workspaceFolder);
+        for (const patternTest of patternTests) {
+            if (vscode.languages.match({ pattern: patternTest }, document) !== 0) {
+                this.parseTestDocument(document, workspaceFolder);
+                return;
+            }
+        }
+
+        // If we have reached this point, the file is not of interest to us
+        this.logger.trace(`[File Loader] Changed document ${document.uri.toString()} is not relevant to this extension`);
+    }
+
+    public async handleRenamedFile(oldUri: vscode.Uri, newUri: vscode.Uri) {
+        // Remove test cases associated with old file
+        this.removeTestFile(oldUri);
+
+        // Get details of renamed file
+        let document = await vscode.workspace.openTextDocument(newUri);
+        let workspaceFolder = await vscode.workspace.getWorkspaceFolder(document.uri);
+
+        // Only parse files from within a workspace folder
+        if (!workspaceFolder) {
+            return;
+        }
+
+        // Check that the new document is in a state to be parsed (is a source code file, and is not 'dirty')
+        if (this.isParsableDocument(document) !== true) {
+            return;
+        }
+
+        // Check if the file is a PHPUnit configuration XML file
+        const patternConfig = this.getLocatorPatternConfigFile(workspaceFolder);
+        if (vscode.languages.match({ pattern: patternConfig }, document) !== 0) {
+            this.parseConfigDocument(document, workspaceFolder);
+            this.resetWorkspace();  // Change in PHPUnit means we need to reparse test files
+            return;
+        }
+
+        // Check if the file is a composer.json file
+        const patternComposer = this.getLocatorPatternComposerFile(workspaceFolder);
+        if (vscode.languages.match({ pattern: patternComposer }, document) !== 0) {
+            this.parseComposerDocument(document, workspaceFolder);
+            this.resetWorkspace(); // Change in composer.json means we need to reparse test files
+            return;
+        }
+
+        // If we are using test suite definitions, check the document location against directories and
+        // file locations for each suite
+        if (this.settings.isUsingTestSuiteDefinitions() === true) {
+            let testSuite  = this.findSuiteTestItemForTestDocument(workspaceFolder, document);
+            this.parseTestDocument(document, workspaceFolder, testSuite);
+            return;
+        }
+
+        // Check if the file is a unit test as defined by available patterns
+        const patternTests = this.getLocatorPatternsTestFiles(workspaceFolder);
+        for (const patternTest of patternTests) {
+            if (vscode.languages.match({ pattern: patternTest }, document) !== 0) {
+                this.parseTestDocument(document, workspaceFolder);
+                return;
+            }
+        }
+
+        // If we have reached this point, the file is not of interest to us
+        this.logger.trace(`[File Loader] Renamed document ${document.uri.toString()} is not relevant to this extension`);
+
+    }
+
+    public async handleRenamedFiles(files: readonly {oldUri: vscode.Uri, newUri: vscode.Uri}[]) {
+        for (let renamedFile of files) {
+            this.handleRenamedFile(renamedFile.oldUri, renamedFile.newUri);
+        }
+    }
+
+    public async handleDeletedFiles(files: readonly vscode.Uri[]) {
+        for (let deletedFile of files) {
+            this.removeTestFile(deletedFile);
+        }
     }
 
     /***********************************************************************/
