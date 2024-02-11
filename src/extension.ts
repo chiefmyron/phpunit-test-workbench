@@ -136,7 +136,9 @@ export function activate(context: vscode.ExtensionContext) {
     // Register event handlers
     context.subscriptions.push(
         vscode.workspace.onDidChangeConfiguration(e => updateConfigurationSettings(settings, testFileLoader)),
-        vscode.workspace.onDidChangeTextDocument(e => testFileLoader.parseOpenDocument(e.document))
+        vscode.workspace.onDidChangeTextDocument(e => testFileLoader.handleChangedTextDocument(e.document)),
+        vscode.workspace.onDidRenameFiles(e => testFileLoader.handleRenamedFiles(e.files)),
+        vscode.workspace.onDidDeleteFiles(e => testFileLoader.handleDeletedFiles(e.files))
     );
 
     // Initialize workspace by scanning for configuration files and parsing currently open documents for tests

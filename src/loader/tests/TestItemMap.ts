@@ -7,7 +7,7 @@ export class TestItemMap {
     private testItemMap: Map<string, vscode.TestItem>;
     private testDefinitionMap: Map<string, TestItemDefinition>;
     private testSuiteList: vscode.TestItem[];
-    private testFileMap: Map<vscode.Uri, string[]>;
+    private testFileMap: Map<string, string[]>;
     private testTagMap: Map<string, vscode.TestItem[]>;
 
     private _onTestTagCreated: vscode.EventEmitter<TestTagCreatedEvent>;
@@ -17,7 +17,7 @@ export class TestItemMap {
         this.testItemMap = new Map<string, vscode.TestItem>();
         this.testDefinitionMap = new Map<string, TestItemDefinition>();
         this.testSuiteList = [];
-        this.testFileMap = new Map<vscode.Uri, string[]>();
+        this.testFileMap = new Map<string, string[]>();
         this.testTagMap = new Map<string, vscode.TestItem[]>();
 
         this._onTestTagCreated = new vscode.EventEmitter<TestTagCreatedEvent>();
@@ -101,7 +101,7 @@ export class TestItemMap {
 
     public getTestItemsForFile(uri: vscode.Uri, type?: ItemType): vscode.TestItem[] {
         let testItems: vscode.TestItem[] = [];
-        this.testFileMap.get(uri)?.forEach(itemId => {
+        this.testFileMap.get(uri.toString())?.forEach(itemId => {
             // Get TestItem for the ID
             let testItem = this.getTestItem(itemId);
             if (!testItem) {
@@ -131,7 +131,7 @@ export class TestItemMap {
 
     public getTestItemIdsForFile(uri: vscode.Uri, type?: ItemType): string[] {
         let testItemIds: string[] = [];
-        this.testFileMap.get(uri)?.forEach(itemId => {
+        this.testFileMap.get(uri.toString())?.forEach(itemId => {
             if (type && itemId.startsWith(type) === true) {
                 testItemIds.push(itemId);
             } else if (!type) {
@@ -157,14 +157,14 @@ export class TestItemMap {
             return;
         }
 
-        let fileTestItems = this.testFileMap.get(item.uri);
+        let fileTestItems = this.testFileMap.get(item.uri.toString());
         if (!fileTestItems) {
             fileTestItems = [];
         }
         if (fileTestItems.indexOf(item.id) <= -1) {
             fileTestItems.push(item.id);
         }
-        this.testFileMap.set(item.uri, fileTestItems);
+        this.testFileMap.set(item.uri.toString(), fileTestItems);
     }
 
     private removeItemFromFileMap(item: vscode.TestItem): void {
@@ -174,7 +174,7 @@ export class TestItemMap {
 
         let fileTestItems = this.getTestItemIdsForFile(item.uri);
         fileTestItems.splice(fileTestItems.indexOf(item.id), 1);
-        this.testFileMap.set(item.uri, fileTestItems);
+        this.testFileMap.set(item.uri.toString(), fileTestItems);
     }
 
     /***********************************************************************
