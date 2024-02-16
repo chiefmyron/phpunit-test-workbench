@@ -142,9 +142,9 @@ export function activate(context: vscode.ExtensionContext) {
     // Register event handlers
     context.subscriptions.push(
         vscode.workspace.onDidChangeConfiguration(e => handleChangedConfiguration(e, settings, testFileLoader)),
-        vscode.workspace.onDidChangeTextDocument(e => handleChangedTextDocument(e.document, testFileLoader, runner)),
-        vscode.workspace.onDidRenameFiles(e => testFileLoader.handleRenamedFiles(e.files)),
-        vscode.workspace.onDidDeleteFiles(e => testFileLoader.handleDeletedFiles(e.files))
+        vscode.workspace.onDidChangeTextDocument(e => handleChangedTextDocument(e, testFileLoader, runner)),
+        vscode.workspace.onDidRenameFiles(e => handleRenamedFile(e, testFileLoader, runner)),
+        vscode.workspace.onDidDeleteFiles(e => handleDeletedFile(e, testFileLoader, runner))
     );
 
     // Initialize workspace by scanning for configuration files and parsing currently open documents for tests
@@ -172,8 +172,9 @@ async function handleChangedConfiguration(event: vscode.ConfigurationChangeEvent
     }
 }
 
-async function handleChangedTextDocument(document: vscode.TextDocument, testFileLoader: TestFileLoader, runner: TestRunner) {
+async function handleChangedTextDocument(event: vscode.TextDocumentChangeEvent, testFileLoader: TestFileLoader, runner: TestRunner) {
     // Only need to parse actual source code files (prevents parsing of URIs with git scheme, for example)
+    let document = event.document;
     if (document.uri.scheme !== 'file') {
         return;
     }
@@ -188,6 +189,22 @@ async function handleChangedTextDocument(document: vscode.TextDocument, testFile
 
     // If document is within the scope of an active continuous test run, initiate a new test run now
     runner.checkForActiveContinuousRun(document);
+}
+
+function handleRenamedFile(event: vscode.FileRenameEvent, testFileLoader: TestFileLoader, runner: TestRunner) {
+    testFileLoader.handleRenamedFiles(event.files);
+
+    for (let {oldUri, newUri} of event.files) {
+        runner.removeContinuousRunForDeletedFile(oldUri);
+    }
+}
+
+function handleDeletedFile(event: vscode.FileDeleteEvent, testFileLoader: TestFileLoader, runner: TestRunner) {
+    testFileLoader.handleDeletedFiles(event.files);
+
+    for (let deletedFileUri of event.files) {
+        runner.removeContinuousRunForDeletedFile(deletedFileUri);
+    }
 }
 
 function handleStartTestRun(testFileLoader: TestFileLoader, runner: TestRunner, request: vscode.TestRunRequest, cancel: vscode.CancellationToken, debug: boolean = false) {

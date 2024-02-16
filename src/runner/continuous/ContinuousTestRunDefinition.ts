@@ -38,4 +38,8 @@ export class ContinuousTestRunDefinition {
     public getFileWatcherPattern(): vscode.RelativePattern {
         return this.fileWatcherPattern;
     }
+
+    public getParentTestRunRequest(): vscode.TestRunRequest {
+        return this.parentTestRunRequest;
+    }
 }

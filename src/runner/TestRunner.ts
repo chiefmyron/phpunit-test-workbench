@@ -384,4 +384,16 @@ export class TestRunner {
             }
         }
     }
+
+    public removeContinuousRunForDeletedFile(deletedFileUri: vscode.Uri) {
+        // Try and match the old file to an existing continuous run pattern
+        for (let pattern of this.activeContinuousRuns.keys()) {
+            let patternUri = pattern.baseUri.with({ path: pattern.baseUri.path + '/' + pattern.pattern });
+            if (patternUri.toString() === deletedFileUri.toString()) {
+                // Remove pattern from the list of active runs
+                this.activeContinuousRuns.delete(pattern);
+                return;
+            }
+        }
+    }
 }
