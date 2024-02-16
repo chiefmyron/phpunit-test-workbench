@@ -18,6 +18,11 @@ export class TestSuiteMap {
         return suites;
     }
 
+    public get(workspaceFolder: vscode.WorkspaceFolder, name: string) {
+        let id = workspaceFolder.uri.toString() + '||' + name;
+        return this.testSuiteMap.get(id);
+    }
+
     public add(workspaceFolder: vscode.WorkspaceFolder, suites: TestSuite[]) {
         for (let suite of suites) {
             this.set(workspaceFolder, suite);

@@ -28,14 +28,17 @@ export function activate(context: vscode.ExtensionContext) {
     const testSuiteMap = new TestSuiteMap();
     const testItemMap = new TestItemMap();
     const testTagProfileMap = new Map<string, vscode.TestRunProfile>();
+
+    // Register events for the test item map to handle tagged tests
     testItemMap.onTestTagCreated(event => {
         // Create run profile for regular run
         let runProfile = ctrl.createRunProfile(
             'TAG: ' + event.tagId,
             vscode.TestRunProfileKind.Run,
-            (request, token) => { runner.run(request, token, false); },
+            (request, token) => { handleStartTestRun(testFileLoader, runner, request, token, false); },
             false,
-            new vscode.TestTag(event.tagId)
+            new vscode.TestTag(event.tagId),
+            true
         );
         testTagProfileMap.set(event.tagId + '::RUN', runProfile);
 
@@ -43,9 +46,10 @@ export function activate(context: vscode.ExtensionContext) {
         let debugProfile = ctrl.createRunProfile(
             'TAG: ' + event.tagId,
             vscode.TestRunProfileKind.Debug,
-            (request, token) => { runner.run(request, token, true); },
+            (request, token) => { handleStartTestRun(testFileLoader, runner, request, token, true); },
             false,
-            new vscode.TestTag(event.tagId)
+            new vscode.TestTag(event.tagId),
+            false
         );
         testTagProfileMap.set(event.tagId + '::DEBUG', debugProfile);
     });
@@ -105,13 +109,15 @@ export function activate(context: vscode.ExtensionContext) {
     ctrl.createRunProfile(
         'Run tests',
         vscode.TestRunProfileKind.Run,
-        (request, token) => { runner.run(request, token, false); },
+        (request, token) => { handleStartTestRun(testFileLoader, runner, request, token, false); },
+        true,
+        undefined,
         true
     );
     ctrl.createRunProfile(
         'Debug tests',
         vscode.TestRunProfileKind.Debug,
-        (request, token) => { runner.run(request, token, true); },
+        (request, token) => { handleStartTestRun(testFileLoader, runner, request, token, true); },
         true
     );
 
@@ -135,8 +141,8 @@ export function activate(context: vscode.ExtensionContext) {
 
     // Register event handlers
     context.subscriptions.push(
-        vscode.workspace.onDidChangeConfiguration(e => updateConfigurationSettings(settings, testFileLoader)),
-        vscode.workspace.onDidChangeTextDocument(e => testFileLoader.handleChangedTextDocument(e.document)),
+        vscode.workspace.onDidChangeConfiguration(e => handleChangedConfiguration(e, settings, testFileLoader)),
+        vscode.workspace.onDidChangeTextDocument(e => handleChangedTextDocument(e.document, testFileLoader, runner)),
         vscode.workspace.onDidRenameFiles(e => testFileLoader.handleRenamedFiles(e.files)),
         vscode.workspace.onDidDeleteFiles(e => testFileLoader.handleDeletedFiles(e.files))
     );
@@ -157,9 +163,59 @@ async function initializeWorkspace(logger: Logger, testFileLoader: TestFileLoade
     await testFileLoader.initializeWorkspace();
 }
 
-async function updateConfigurationSettings(settings: Settings, testFileLoader: TestFileLoader) {
+async function handleChangedConfiguration(event: vscode.ConfigurationChangeEvent, settings: Settings, testFileLoader: TestFileLoader) {
     // Refresh configuration object with new settings and refresh files found in the workspace
     // (setting changes may affect the way TestItem objects are discovered and/or organized)
-    settings.refresh();
-    await testFileLoader.resetWorkspace();
+    if (event.affectsConfiguration('phpunit-test-workbench')) {
+        settings.refresh();
+        await testFileLoader.resetWorkspace();
+    }
+}
+
+async function handleChangedTextDocument(document: vscode.TextDocument, testFileLoader: TestFileLoader, runner: TestRunner) {
+    // Only need to parse actual source code files (prevents parsing of URIs with git scheme, for example)
+    if (document.uri.scheme !== 'file') {
+        return;
+    }
+
+    // Check whether the file is 'dirty' (i.e. Do not parse files that are actively being edited)
+    if (document.isDirty === true) {
+        return;
+    }
+    
+    // Update test item definitions for changed document
+    testFileLoader.handleChangedTextDocument(document);
+
+    // If document is within the scope of an active continuous test run, initiate a new test run now
+    runner.checkForActiveContinuousRun(document);
+}
+
+function handleStartTestRun(testFileLoader: TestFileLoader, runner: TestRunner, request: vscode.TestRunRequest, cancel: vscode.CancellationToken, debug: boolean = false) {
+    // Check if the request is for a continuous test run
+    if (request.continuous !== true) {
+        runner.run(request, cancel, debug);
+        return;
+    }
+    
+    // Get details of the test items included in the continuous test run
+    let patterns: vscode.RelativePattern[] = [];
+    if (!request.include) {
+        // Continuous test run for entire workspace
+        // Get locator patterns for test files in each workspace folder
+        if (!vscode.workspace.workspaceFolders) {
+            // Handle the case of no open folders
+            return;
+        }
+        vscode.workspace.workspaceFolders.map(workspaceFolder => {
+            patterns =  patterns.concat(testFileLoader.getLocatorPatternsTestFiles(workspaceFolder));
+        });
+    } else {
+        // Get the associated URI for each included test item to determine a locator pattern
+        for (let item of request.include) {
+            patterns.push(...testFileLoader.getLocatorPatternsContinuousTestRun(item));
+        }
+    }
+
+    // Notify test runner of new patterns to check against
+    runner.addContinuousTestRunDetails(request, cancel, patterns, debug);
 }

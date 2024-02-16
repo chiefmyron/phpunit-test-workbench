@@ -109,19 +109,19 @@ export class TestFileLoader {
     /* Workspace file locator patterns for Composer, config and test files */
     /***********************************************************************/
 
-    private getLocatorPatternComposerFile(workspaceFolder: vscode.WorkspaceFolder): vscode.RelativePattern {
+    public getLocatorPatternComposerFile(workspaceFolder: vscode.WorkspaceFolder): vscode.RelativePattern {
         let pattern = this.settings.getComposerJsonLocatorPattern(workspaceFolder);
         this.logger.trace(`Using locator pattern for Composer file identification: ${pattern.pattern}`);
         return pattern;
     }
 
-    private getLocatorPatternConfigFile(workspaceFolder: vscode.WorkspaceFolder): vscode.RelativePattern {
+    public getLocatorPatternConfigFile(workspaceFolder: vscode.WorkspaceFolder): vscode.RelativePattern {
         let pattern = this.settings.getPhpUnitConfigXmlLocatorPattern(workspaceFolder);
         this.logger.trace(`Using locator pattern for configuration file identification: ${pattern.pattern}`);
         return pattern;
     }
 
-    private getLocatorPatternsTestFiles(workspaceFolder: vscode.WorkspaceFolder): vscode.RelativePattern[] {
+    public getLocatorPatternsTestFiles(workspaceFolder: vscode.WorkspaceFolder): vscode.RelativePattern[] {
         let patterns: vscode.RelativePattern[] = [];
         if (this.settings.isUsingTestSuiteDefinitions() === true) {
             // Tests are identified by test suite definitions in the PHPUnit configuration XML file
@@ -140,16 +140,47 @@ export class TestFileLoader {
         return patterns;
     }
 
+    public getLocatorPatternsContinuousTestRun(item: vscode.TestItem): vscode.RelativePattern[] {
+        // Get test item details
+        let details = this.testItemMap.getTestDefinition(item.id);
+        let workspaceFolder = undefined;
+        if (item.uri) {
+            workspaceFolder = vscode.workspace.getWorkspaceFolder(item.uri);
+        }
+        if (!workspaceFolder) {
+            return [];
+        }
+        let testSuffixGlob = this.settings.getTestSuffixGlob(workspaceFolder);
+
+        let patterns: vscode.RelativePattern[] = [];
+        switch (details?.getType()) {
+            case ItemType.testsuite: 
+                // Get test suite globs from definition
+                //testSuiteMap.get(details.getWorkspaceFolderUri(), details.getTestSuiteName());
+                break;
+            case ItemType.namespace:
+                // Generate relative path based on the namespace directory, and the test suffixes defined for the workspace
+                var glob = item.uri!.path + '/**/' + testSuffixGlob;
+                patterns.push(new vscode.RelativePattern(workspaceFolder, glob));
+                break;
+            case ItemType.class:
+            case ItemType.method:
+                // Pull apart URI to get the folder, and make the filename an exact match pattern
+                var pathParts = item.uri!.path.split('/');
+                var pattern = pathParts.pop();
+                if (!pattern) {
+                    pattern = testSuffixGlob;
+                }
+                patterns.push(new vscode.RelativePattern(pathParts.join('/'), pattern));
+                break;
+        }
+
+        return patterns;
+    }
+
     /***********************************************************************/
     /* Workspace file system watcher operations                            */
     /***********************************************************************/
-
-
-
-//SIMPLIFY WATCHERS - ANYTHING WITHIN A WORKSPACE FOLDER USING A RECURSIVE GLOB PATTERN (e.g. test files)
-//IS IGNORED AND IS CAPTURED AS PART OF A STANDARD onChange / onDelete EVENT
-
-
 
     private setWatchersForConfigFiles(
         workspaceFolder: vscode.WorkspaceFolder,
