@@ -5,25 +5,29 @@ import { TestFileLoader } from '../loader/TestFileLoader';
 import { TestItemMap } from '../loader/tests/TestItemMap';
 import { TestRunner } from "../runner/TestRunner";
 import { ItemType } from '../loader/tests/TestItemDefinition';
+import { EventDispatcher } from './EventDispatcher';
 
 export class CommandHandler {
     private loader: TestFileLoader;
-    private itemMap: TestItemMap;
-    private profileMap: Map<string, vscode.TestRunProfile>;
     private runner: TestRunner;
+    private dispatcher: EventDispatcher;
+    private testItemMap: TestItemMap;
+    private testProfileMap: Map<string, vscode.TestRunProfile>;
     private logger: Logger;
 
     constructor(
         loader: TestFileLoader,
-        itemMap: TestItemMap,
-        profileMap: Map<string, vscode.TestRunProfile>,
         runner: TestRunner,
+        dispatcher: EventDispatcher,
+        testItemMap: TestItemMap,
+        testProfileMap: Map<string, vscode.TestRunProfile>,
         logger: Logger
     ) {
         this.loader = loader;
-        this.itemMap = itemMap;
-        this.profileMap = profileMap;
         this.runner = runner;
+        this.dispatcher = dispatcher;
+        this.testItemMap = testItemMap;
+        this.testProfileMap = testProfileMap;
         this.logger = logger;
     }
 
@@ -33,6 +37,7 @@ export class CommandHandler {
         let includes: vscode.TestItem[];
         let request: vscode.TestRunRequest | undefined;
         let cancellationTokenSource = new vscode.CancellationTokenSource();
+        let cancel = cancellationTokenSource.token;
         let tagId: string | undefined = undefined;
 
         // Set debug flag
@@ -59,15 +64,15 @@ export class CommandHandler {
                 }
 
                 // Find test item definition for a method at the current cursor position
-                testItem = this.itemMap.getTestItemForFilePosition(editor.document.uri, editor.selection.active, ItemType.method);
+                testItem = this.testItemMap.getTestItemForFilePosition(editor.document.uri, editor.selection.active, ItemType.method);
                 if (!testItem) {
                     this.logger.warn(`Unable to find a test item definition for a method at the current cursor position. Aborting test run.`, true);
                     return;
                 }
 
                 // Create test run request
-                includes = [ testItem ];
-                await this.executeTestRunRequest(includes, [], cancellationTokenSource.token, debug);
+                request = this.createTestRunRequest([ testItem ], [], debug, false);
+                await this.dispatcher.handleNewTestRunRequest(request!, cancel, debug);
                 this.logger.info(`Command complete: ${commandTypeDesc} test method`);
                 break;
             case 'run.class':
@@ -87,7 +92,7 @@ export class CommandHandler {
                 }
 
                 // Find test item definition for a class at the current cursor position
-                testItem = this.itemMap.getTestItemForFilePosition(editor.document.uri, editor.selection.active, ItemType.class);
+                testItem = this.testItemMap.getTestItemForFilePosition(editor.document.uri, editor.selection.active, ItemType.class);
                 if (!testItem) {
                     this.logger.warn(`Unable to find a test item definition for a class at the current cursor position. Aborting test run.`, true);
                     return;
@@ -99,8 +104,8 @@ export class CommandHandler {
                 }
 
                 // Create test run request
-                includes = [ testItem ];
-                await this.executeTestRunRequest(includes, [], cancellationTokenSource.token, debug, tagId);
+                request = this.createTestRunRequest([ testItem ], [], debug, false, tagId);
+                await this.dispatcher.handleNewTestRunRequest(request!, cancel, debug);
                 this.logger.info(`Command complete: ${commandTypeDesc} test class`);
                 break;
             case 'run.suite':
@@ -110,7 +115,7 @@ export class CommandHandler {
                 this.logger.info(`Running command: ${commandTypeDesc} test suite...`);
 
                 // Check that test suites have been detected
-                let testSuiteItems = this.itemMap.getTestItemsForSuites();
+                let testSuiteItems = this.testItemMap.getTestItemsForSuites();
                 if (testSuiteItems.length <= 0) {
                     this.logger.warn(`No test suite definitions have been found. Aborting test run.`, true);
                     return;
@@ -119,7 +124,7 @@ export class CommandHandler {
                 // Get a list of available test suites
                 let options: vscode.QuickPickItem[] = [];
                 for (let item of testSuiteItems) {
-                    let definition = this.itemMap.getTestDefinition(item.id);
+                    let definition = this.testItemMap.getTestDefinition(item.id);
                     if (definition) {
                         options.push(new TestItemQuickPickItem(item.id, definition.getTestSuiteName()!, item.uri!.fsPath));
                     }
@@ -140,7 +145,7 @@ export class CommandHandler {
                     this.logger.warn('Unable to determine test suite ID', true);
                     return;
                 }
-                testItem = this.itemMap.getTestItem(selectedTestSuite.getId());
+                testItem = this.testItemMap.getTestItem(selectedTestSuite.getId());
                 if (!testItem) {
                     this.logger.warn(`${selectedTestSuite.getId()} is not a recognised test suite.`, true);
                     return;
@@ -152,11 +157,9 @@ export class CommandHandler {
                 }
 
                 // Create test run request
-                includes = [ testItem ];
-                await this.executeTestRunRequest(includes, [], cancellationTokenSource.token, debug, tagId);
+                request = this.createTestRunRequest([ testItem ], [], debug, false, tagId);
+                await this.dispatcher.handleNewTestRunRequest(request!, cancel, debug);
                 this.logger.info(`Command complete: ${commandTypeDesc} test suite`);
-                
-
                 break;
             case 'run.all':
             case 'run.all.tag':
@@ -173,24 +176,25 @@ export class CommandHandler {
                 }
 
                 // Create test run request
-                await this.executeTestRunRequest(undefined, [], cancellationTokenSource.token, debug, tagId);
+                request = this.createTestRunRequest(undefined, [], debug, false, tagId);
+                await this.dispatcher.handleNewTestRunRequest(request!, cancel, debug);
                 this.logger.info(`Command complete: ${commandTypeDesc} all tests`);
                 break;
         }
     }
 
     private async getTagIdFromQuickPick(): Promise<string | undefined> {
-        return vscode.window.showQuickPick(this.itemMap.getTagIds(), {
+        return vscode.window.showQuickPick(this.testItemMap.getTagIds(), {
             canPickMany: false,
             title: `Choose a tag to filter by`
         });
     }
 
-    private async executeTestRunRequest(
+    private createTestRunRequest(
         include: vscode.TestItem[] | undefined,
         exclude: vscode.TestItem[] | undefined,
-        cancellationToken: vscode.CancellationToken,
         debug: boolean,
+        continuous: boolean,
         tagId?: string
     ) {
         // If the run is being filtered by a tag, prompt the user to select the tag
@@ -200,7 +204,7 @@ export class CommandHandler {
             if (debug === true) {
                 profileId = tagId + '::DEBUG';
             }
-            profile = this.profileMap.get(profileId);
+            profile = this.testProfileMap.get(profileId);
             if (!profile) {
                 this.logger.warn(`Unable to find a test run profile for '${tagId}'. Aborting test run.`, true);
                 return;
@@ -208,7 +212,6 @@ export class CommandHandler {
         }
 
         // Create test run request
-        let request = new vscode.TestRunRequest(include, exclude, profile);
-        return this.runner.run(request, cancellationToken, debug);
+        return new vscode.TestRunRequest(include, exclude, profile, continuous);
     }
 }
