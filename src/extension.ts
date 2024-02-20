@@ -82,19 +82,14 @@ export function activate(context: vscode.ExtensionContext) {
 
     // Create event dispatcher
     logger.trace('Creating event dispatcher');
-    const dispatcher = new EventDispatcher(loader, runner, settings);
+    const dispatcher = new EventDispatcher(loader, runner, diagnosticCollection, settings);
 
     // Create command handler
     logger.trace(`Creating command handler`);
     const commandHandler = new CommandHandler(loader, runner, dispatcher, testItemMap, testTagProfileMap, logger);
 
-    // Refresh handler
-    ctrl.refreshHandler = async () => {
-        diagnosticCollection.clear();
-        dispatcher.handleTestItemRefresh();
-    };
-
-    // Resolve handler
+    // Extension entry point event handlers
+    ctrl.refreshHandler = async (token) => dispatcher.handleTestItemRefresh();
     ctrl.resolveHandler = async (item) => dispatcher.handleTestItemResolve(item);
 
     // Set up run profile
