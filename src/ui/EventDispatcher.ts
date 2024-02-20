@@ -6,15 +6,18 @@ import { Settings } from '../settings';
 export class EventDispatcher {
     private loader: TestFileLoader;
     private runner: TestRunner;
+    private diagnostics: vscode.DiagnosticCollection;
     private settings: Settings;
 
     constructor(
         loader: TestFileLoader,
         runner: TestRunner,
+        diagnostics: vscode.DiagnosticCollection,
         settings: Settings,
     ) {
         this.loader = loader;
         this.runner = runner;
+        this.diagnostics = diagnostics;
         this.settings = settings;
     }
 
@@ -22,6 +25,7 @@ export class EventDispatcher {
      * Request triggered by the editor to resolve test items for the entire workspace.
      */
     public async handleTestItemRefresh() {
+        this.diagnostics.clear();
         this.loader.resetWorkspace();
     }
 
@@ -88,6 +92,9 @@ export class EventDispatcher {
 
         // Update TestItem definitions for changed document
         await this.loader.handleChangedTextDocument(document);
+
+        // If the document has any associated diagnostic messages generated from a previous test run, remove them
+        this.diagnostics.delete(document.uri);
 
         // If document is within the scope of an active continuous test run, initiate a new test run now
         this.runner.checkForActiveContinuousRun(document);

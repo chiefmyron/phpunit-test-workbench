@@ -174,7 +174,13 @@ export class TestRunner {
         // Handle data written to stderr
         child.stderr.setEncoding('utf-8');
         child.stderr.on('data', (data) => {
-            this.logger.error('stderr: ' + data);
+            this.logger.error(``);
+            this.logger.error(`---- fatal error ----`);
+            this.logger.error(data);
+            this.logger.error(`---------------------`);
+            if (this.settings.get('log.autoDisplayOutput', 'errorsOnly') !== 'never') {
+                this.logger.showOutputChannel();
+            }
         });
 
         // Clean up when parser has finished processing 
