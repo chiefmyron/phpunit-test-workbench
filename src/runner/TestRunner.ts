@@ -8,6 +8,7 @@ import { TestRunResultMap } from './TestRunResultMap';
 import { TestItemMap } from '../loader/tests/TestItemMap';
 import { DebugConfigQuickPickItem } from '../ui/DebugConfigQuickPickItem';
 import { TestResultStatus } from './TestResult';
+import { ContinuousTestRunDefinition } from './continuous/ContinuousTestRunDefinition';
 
 export class TestRunner {
     private ctrl: vscode.TestController;
@@ -17,6 +18,7 @@ export class TestRunner {
     private logger: Logger;
     private testItemQueue: Map<string, vscode.TestItem>;
     private testDiagnosticMap: Map<string, vscode.Diagnostic[]>;
+    private activeContinuousRuns: Map<vscode.RelativePattern, ContinuousTestRunDefinition>;
 
     constructor(ctrl: vscode.TestController, itemMap: TestItemMap, diagnosticCollection: vscode.DiagnosticCollection, settings: Settings, logger: Logger) {
         this.ctrl = ctrl;
@@ -26,6 +28,7 @@ export class TestRunner {
         this.logger = logger;
         this.testItemQueue = new Map<string, vscode.TestItem>();
         this.testDiagnosticMap = new Map<string, vscode.Diagnostic[]>();
+        this.activeContinuousRuns = new Map<vscode.RelativePattern, ContinuousTestRunDefinition>();
     }
 
     public async run(request: vscode.TestRunRequest, cancel: vscode.CancellationToken, debug: boolean = false) {
@@ -189,6 +192,23 @@ export class TestRunner {
                 }
             });
 
+            child.on('exit', (code) => {
+                this.logger.trace('Child process exited with exit code: ' + code);
+    
+                // If test execution was running in debug mode, stop debugging on completion 
+                if (debug) {
+                    vscode.debug.stopDebugging();
+                }
+    
+                if (parser.isParsing() === false) {
+                    resolve(parser.getResultMap());
+                }
+            });
+
+            child.on('error', (err) => {
+                this.logger.error('Unable to start child process: ' + err);
+            });
+
             parser.onParsingComplete((event) => {
                 this.logger.trace('Message parser completed processing queue');
 
@@ -324,5 +344,56 @@ export class TestRunner {
         queue.set(item.id, item);
         item.children.forEach(child => this.buildTestRunQueue(run, queue, child, tagId));
         return queue;
+    }
+
+    /*
+     * Continuous test run functionality
+    */
+    public addContinuousTestRunDetails(request: vscode.TestRunRequest, cancel: vscode.CancellationToken, patterns: vscode.RelativePattern[], debug: boolean = false) {
+        for (let pattern of patterns) {
+            let continuousRunDef = new ContinuousTestRunDefinition(
+                request,
+                cancel,
+                pattern,
+                debug
+            );
+            this.activeContinuousRuns.set(pattern, continuousRunDef);
+        }
+
+        // Handle continuous run cancellation by removing patterns from the list of active runs
+        cancel.onCancellationRequested(event => {
+            for (let pattern of patterns) {
+                this.activeContinuousRuns.delete(pattern);
+            }
+        });
+    }
+
+    public checkForActiveContinuousRun(document: vscode.TextDocument) {
+        // Get URI for document
+        for (let pattern of this.activeContinuousRuns.keys()) {
+            if (vscode.languages.match({ pattern: pattern }, document) !== 0) {
+                // Get continuous test run definition
+                let continuousRun = this.activeContinuousRuns.get(pattern);
+                if (!continuousRun) {
+                    break;
+                }
+
+                // Document falls under scope of an active continuous run - start a new test run now
+                this.run(continuousRun.createTestRunRequest(), continuousRun.getCancellationToken(), continuousRun.isDebug());
+                return;
+            }
+        }
+    }
+
+    public removeContinuousRunForDeletedFile(deletedFileUri: vscode.Uri) {
+        // Try and match the old file to an existing continuous run pattern
+        for (let pattern of this.activeContinuousRuns.keys()) {
+            let patternUri = pattern.baseUri.with({ path: pattern.baseUri.path + '/' + pattern.pattern });
+            if (patternUri.toString() === deletedFileUri.toString()) {
+                // Remove pattern from the list of active runs
+                this.activeContinuousRuns.delete(pattern);
+                return;
+            }
+        }
     }
 }

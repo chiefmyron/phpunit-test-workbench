@@ -8,6 +8,7 @@ import { TestSuiteMap } from './loader/suites/TestSuiteMap';
 import { CommandHandler } from './ui/CommandHandler';
 import { TestRunner } from './runner/TestRunner';
 import { TestFileLoader } from './loader/TestFileLoader';
+import { EventDispatcher } from './ui/EventDispatcher';
 
 // this method is called when your extension is activated
 // your extension is activated the very first time the command is executed
@@ -28,14 +29,17 @@ export function activate(context: vscode.ExtensionContext) {
     const testSuiteMap = new TestSuiteMap();
     const testItemMap = new TestItemMap();
     const testTagProfileMap = new Map<string, vscode.TestRunProfile>();
+
+    // Register events for the test item map to handle tagged tests
     testItemMap.onTestTagCreated(event => {
         // Create run profile for regular run
         let runProfile = ctrl.createRunProfile(
             'TAG: ' + event.tagId,
             vscode.TestRunProfileKind.Run,
-            (request, token) => { runner.run(request, token, false); },
+            (request, token) => { dispatcher.handleNewTestRunRequest(request, token, false); },
             false,
-            new vscode.TestTag(event.tagId)
+            new vscode.TestTag(event.tagId),
+            true
         );
         testTagProfileMap.set(event.tagId + '::RUN', runProfile);
 
@@ -43,9 +47,10 @@ export function activate(context: vscode.ExtensionContext) {
         let debugProfile = ctrl.createRunProfile(
             'TAG: ' + event.tagId,
             vscode.TestRunProfileKind.Debug,
-            (request, token) => { runner.run(request, token, true); },
+            (request, token) => { dispatcher.handleNewTestRunRequest(request, token, true); },
             false,
-            new vscode.TestTag(event.tagId)
+            new vscode.TestTag(event.tagId),
+            false
         );
         testTagProfileMap.set(event.tagId + '::DEBUG', debugProfile);
     });
@@ -73,45 +78,38 @@ export function activate(context: vscode.ExtensionContext) {
 
     // Create test file loader
     logger.trace('Creating test file loader');
-    const testFileLoader = new TestFileLoader(ctrl, testItemMap, testSuiteMap, settings, logger);
+    const loader = new TestFileLoader(ctrl, testItemMap, testSuiteMap, settings, logger);
+
+    // Create event dispatcher
+    logger.trace('Creating event dispatcher');
+    const dispatcher = new EventDispatcher(loader, runner, settings);
 
     // Create command handler
     logger.trace(`Creating command handler`);
-    const commandHandler = new CommandHandler(testFileLoader, testItemMap, testTagProfileMap, runner, logger);
+    const commandHandler = new CommandHandler(loader, runner, dispatcher, testItemMap, testTagProfileMap, logger);
 
     // Refresh handler
     ctrl.refreshHandler = async () => {
         diagnosticCollection.clear();
-        testFileLoader.resetWorkspace();
+        dispatcher.handleTestItemRefresh();
     };
 
     // Resolve handler
-    ctrl.resolveHandler = async item => {
-        if (!item) {
-            // We are being asked to discover all tests for the workspace
-            await testFileLoader.parseWorkspaceTestFiles();
-        } else {
-            // We are being asked to resolve children for the supplied TestItem
-            try {
-                if (item.uri && item.uri.scheme === 'file') {
-                    let document = await vscode.workspace.openTextDocument(item.uri);
-                    await testFileLoader.parseTestDocument(document);
-                }
-            } catch (e) { }
-        }
-    };
+    ctrl.resolveHandler = async (item) => dispatcher.handleTestItemResolve(item);
 
     // Set up run profile
     ctrl.createRunProfile(
         'Run tests',
         vscode.TestRunProfileKind.Run,
-        (request, token) => { runner.run(request, token, false); },
+        (request, token) => { dispatcher.handleNewTestRunRequest(request, token, false); },
+        true,
+        undefined,
         true
     );
     ctrl.createRunProfile(
         'Debug tests',
         vscode.TestRunProfileKind.Debug,
-        (request, token) => { runner.run(request, token, true); },
+        (request, token) => { dispatcher.handleNewTestRunRequest(request, token, true); },
         true
     );
 
@@ -135,14 +133,15 @@ export function activate(context: vscode.ExtensionContext) {
 
     // Register event handlers
     context.subscriptions.push(
-        vscode.workspace.onDidChangeConfiguration(e => updateConfigurationSettings(settings, testFileLoader)),
-        vscode.workspace.onDidChangeTextDocument(e => testFileLoader.handleChangedTextDocument(e.document)),
-        vscode.workspace.onDidRenameFiles(e => testFileLoader.handleRenamedFiles(e.files)),
-        vscode.workspace.onDidDeleteFiles(e => testFileLoader.handleDeletedFiles(e.files))
+        vscode.workspace.onDidChangeConfiguration(e => dispatcher.handleChangedConfiguration(e)),
+        vscode.workspace.onDidChangeTextDocument(e => dispatcher.handleChangedTextDocument(e)),
+        vscode.workspace.onDidRenameFiles(e => dispatcher.handleRenamedFile(e)),
+        vscode.workspace.onDidDeleteFiles(e => dispatcher.handleDeletedFile(e))
     );
 
     // Initialize workspace by scanning for configuration files and parsing currently open documents for tests
-    initializeWorkspace(logger, testFileLoader);
+    logger.trace('Initialise workspace by reading configuration files and setting file system watchers');
+    loader.initializeWorkspace();
 
     logger.trace('Extension "phpunit-test-workbench" activated!');
     logger.trace('');
@@ -150,16 +149,3 @@ export function activate(context: vscode.ExtensionContext) {
 
 // this method is called when your extension is deactivated
 export function deactivate() {}
-
-async function initializeWorkspace(logger: Logger, testFileLoader: TestFileLoader) {
-    // Scan workspace folders for configuration files
-    logger.trace('Initialise workspace by reading configuration files and setting file system watchers');
-    await testFileLoader.initializeWorkspace();
-}
-
-async function updateConfigurationSettings(settings: Settings, testFileLoader: TestFileLoader) {
-    // Refresh configuration object with new settings and refresh files found in the workspace
-    // (setting changes may affect the way TestItem objects are discovered and/or organized)
-    settings.refresh();
-    await testFileLoader.resetWorkspace();
-}
