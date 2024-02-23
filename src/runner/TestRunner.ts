@@ -197,9 +197,9 @@ export class TestRunner {
         child.on('exit', (code, signal) => {
             this.logger.trace('Child process completed with exit code: ' + code);
             
-            if (code && code > 0 && buffer !== '') {
-                this.writeFatalErrorToLog(buffer, run);
-            }
+            // if (code && code > 0 && buffer !== '') {
+            //     this.writeFatalErrorToLog(buffer, run);
+            // }
 
             // If test execution was running in debug mode, stop debugging on completion 
             if (debug) {
