@@ -2,342 +2,458 @@ import * as vscode from 'vscode';
 import { Logger } from "../output";
 import { generateTestItemId } from "../loader/tests/TestFileParser";
 import { ItemType } from "../loader/tests/TestItemDefinition";
-import { ResultParsingCompleteEvent } from './events/ResultParsingCompleteEvent';
 import { Settings } from '../settings';
 import { TestResult, TestResultStatus } from './TestResult';
-import { TestRunResultMap } from './TestRunResultMap';
+import { TestRunSummary } from './TestRunSummary';
 
-const patternTestStarted = new RegExp(/##teamcity\[testStarted /);
-const patternTestFailed = new RegExp(/##teamcity\[testFailed /);
-const patternTestIgnored = new RegExp(/##teamcity\[testIgnored /);
-const patternTestFinished = new RegExp(/##teamcity\[testFinished /);
-const patternTestAttribName = new RegExp(/##teamcity.*name='(.*?)'/);
-const patternTestAttribLocationHint = new RegExp(/##teamcity.*locationHint='php_qn:\/\/(.*?)'/);
-const patternTestAttribMessage = new RegExp(/##teamcity.*message='(.*?)'/);
-const patternTestAttribDetails = new RegExp(/##teamcity.*details='(.*?)'/);
-const patternTestAttribDuration = new RegExp(/##teamcity.*duration='(.*?)'/);
-const patternTestAttribType = new RegExp(/##teamcity.*type='(.*?)'/);
-const patternTestAttribExpected = new RegExp(/##teamcity.*expected='(.*?)'/);
-const patternTestAttribActual = new RegExp(/##teamcity.*actual='(.*?)'/);
-const patternTestAttribDataSetNum = new RegExp(/##teamcity.*with data set \#(.*?)'/);
+const patternTestCount = new RegExp(/##teamcity\[testCount\b(?:(?=(\s+(?:count='([^']*)'|flowId='([^']*)')|[^\s>]+|\s+))\1)*/);
+const patternTeamCityRecord = new RegExp(/##teamcity\[([a-zA-Z]+)|(\S+)=[']((?:\|.|[^\|'])*)[']/gm);
 const patternSummaryOk = new RegExp(/OK \((\d*) (test|tests), (\d*) (assertion|assertions)\)/);
-const patternSummaryNotOk = new RegExp(/(Test|Tests): (\d*), (Assertion|Assertions): (\d*)/);
-const patternSummaryNotOkSkipped = new RegExp(/Skipped: (\d*)/);
-const patternSummaryNotOkFailures = new RegExp(/Failures: (\d*)/);
-const patternSummaryNotOkErrors = new RegExp(/Errors: (\d*)/);
+const patternSummaryNotOk = new RegExp(/(Tests|Assertions|Errors|Failures|Warnings|Skipped|Risky): ([0-9]*)+/gm);
 const patternFatalError = new RegExp(/Fatal error: (.*)/);
 
 export class TestRunResultParser extends vscode.EventEmitter<any> {
+
     private run: vscode.TestRun;
-    private testItemQueue: Map<string, vscode.TestItem>;
+    private testItems: Map<string, vscode.TestItem>;
     private settings: Settings;
     private logger: Logger;
-    private messageQueue: string[];
-    private result: TestResult | undefined;
-    private resultMap: TestRunResultMap;
-    private buffer: string;
-    private _isParsing: boolean;
-    private _onParsingComplete: vscode.EventEmitter<ResultParsingCompleteEvent>;
+
+    private activeTestSuiteName: string = '';
+    private activeTestSuiteUri: string = '';
+    private activeTestSuiteClassname: string = '';
+    private activeTestResult: TestResult | undefined;
+
+    private summary: TestRunSummary;
 
     constructor(
         run: vscode.TestRun,
-        queue: Map<string, vscode.TestItem>,
+        testItems: Map<string, vscode.TestItem>,
         settings: Settings,
         logger: Logger
     ) {
         super();
 
         this.run = run;
-        this.testItemQueue = queue;
+        this.testItems = testItems;
         this.settings = settings;
         this.logger = logger;
-        this.messageQueue = [];
-        this.resultMap = new TestRunResultMap();
-        this.buffer = '';
-        this._isParsing = false;
-        this._onParsingComplete = new vscode.EventEmitter<ResultParsingCompleteEvent>();
+        this.summary = new TestRunSummary();
     }
 
-    get onParsingComplete(): vscode.Event<ResultParsingCompleteEvent> {
-        return this._onParsingComplete.event;
+    public getSummary(): TestRunSummary {
+        return this.summary;
     }
 
-    private enqueue(contents: string): void {
-        this.messageQueue.push(contents);
-    }
-
-    private dequeue(): string | undefined {
-        return this.messageQueue.shift();
-    }
-
-    private processMessageQueue() {
-        this._isParsing = true;
-        while (this.messageQueue.length > 0) {
-            let content = this.dequeue();
-            if (content) {
-                this.parseContent(content);
-            }
-        }
-        this._isParsing = false;
-        this._onParsingComplete.fire(
-            new ResultParsingCompleteEvent(this.resultMap)
-        );
-    }
-
-    public reset(): void {
-        this.resultMap.reset();
-        this.messageQueue = [];
-    }
-
-    public isParsing(): boolean {
-        return this._isParsing;
-    }
-
-    public parse(contents: string): void {
-        this.enqueue(contents);
-        if (this._isParsing === false) {
-            this.processMessageQueue();
-        }
-    }
-
-    private parseContent(contents: string): void {
-        // If the buffer is not empty, append to existing content
-        if (this.buffer.length > 0) {
-            contents = this.buffer + contents;
-            this.buffer = '';
-        }
-
-        // Parse individual lines
-        const lines: string[] = contents.split(/\r\n|\r|\n/g);
-        for (let line of lines) {
-            // Fix escaped quote characters
-            line = line.replace(new RegExp(/\|'/g), "\"");
-
-            // Teamcity lines should start with '##' and finish with a closing ']'. If a teamcity line 
-            // isn't completed correctly, it must only be partially printed - add to the buffer and
-            // parse the complete line the next time around
-            if (line.startsWith('#') === true && line.endsWith(']') !== true) {
-                this.buffer = this.buffer + line;
-                break;
-            }
-
-            // Parse line
-            let m: RegExpMatchArray | null;
-
-            // Check if line matches 'Test started' string
-            if (m = line.match(patternTestStarted)) {
-                this.result = this.processLineTestStarted(line);
-                if (this.result) {
-                    continue;
-                }
-            }
-
-            // Check if line matches 'Test failed' string
-            if (m = line.match(patternTestFailed)) {
-                this.processLineTestFailed(line, this.result);
-                continue;
-            }
-
-            // Check if line matches 'Test ignored' string
-            if (m = line.match(patternTestIgnored)) {
-                this.processLineTestIgnored(line, this.result);
-                continue;
-            }
-
-            // Check if line matches 'Test finished' string
-            if (m = line.match(patternTestFinished)) {
-                this.processLineTestFinished(line, this.result);
-                continue;
-            }
-
-            // Check if the line is a test run summary (with no failures, errors or skipped tests)
-            if (m = line.match(patternSummaryOk)) {
-                this.processLineTestSummaryOk(m);
-                break;
-            }
-
-            // Check if the line is a test run summary (with one or more issues)
-            if (m = line.match(patternSummaryNotOk)) {
-                this.processLineTestSummaryNotOk(line, m);
-                break;
-            }
-
-            // Check if a fatal error occurred
-            if (m = line.match(patternFatalError)) {
-                let errorMessage = m.at(1)!;
-                this.logger.error(`Fatal error occurred while running tests: ${errorMessage}\n`);
-                vscode.window.showErrorMessage('Fatal error occurred while executing PHPUnit test run', { detail: errorMessage, modal: false }, 'View output').then(item => {
-                    if (item === 'View output') {
-                        this.logger.showOutputChannel();
-                    }
-                });
-                break;
-            }
-        }
-    }
-
-    public getResultMap(): TestRunResultMap {
-        return this.resultMap;
-    }
-
-    private processLineTestStarted(line: string): TestResult | undefined {
-        // Get test details
-        let testName = line.match(patternTestAttribName)?.at(1);
-        let testLocationHint = line.match(patternTestAttribLocationHint)?.at(1);
-
-        // Parse location hint to build up ID for test item
-        let testLocationHintParts = testLocationHint?.split('::');
-        let result: TestResult | undefined;
-        if (testLocationHintParts) {
-            let testFilename = testLocationHintParts[0];
-            let testClassName = testLocationHintParts[1];
-            let testMethodName = testLocationHintParts[2];
-
-            // Convert test filename into a URI
-            let testFilenameUri = vscode.Uri.file(testFilename);
-            
-            // Create new test run result item to store result
-            let testId = generateTestItemId(ItemType.method, testFilenameUri, testMethodName);
-            let testItem = this.testItemQueue.get(testId);
-            if (testItem) {
-                // Create result item to track results for this test
-                result = new TestResult(testItem);
-                result.markStarted();
-
-                // Update the test run to indicate the test has started
-                this.run.started(testItem);
-            } else {
-                this.logger.warn('Unable to find test item for test: ' + testId);
-            }
-        } else {
-            this.logger.warn('Unable to parse test location hint: ' + testLocationHint);
-        }
-        return result;
-    }
-
-    private processLineTestFailed(line: string, result?: TestResult): void {
-        if (!result) {
+    public parseLine(line: string) {
+        if (line === '') {
             return;
         }
 
-        // Get test details and failure message
-        let message = line.match(patternTestAttribMessage)?.at(1);
-        let messageDetail = line.match(patternTestAttribDetails)?.at(1);
-        let failureType = line.match(patternTestAttribType)?.at(1);
-        let expectedValue = line.match(patternTestAttribExpected)?.at(1);
-        let actualValue = line.match(patternTestAttribActual)?.at(1);
-        let dataSetIdentifier = line.match(patternTestAttribDataSetNum)?.at(1);
+        // Parse line
+        this.logger.trace(line);
+        let m: IterableIterator<RegExpMatchArray>;
+        let n: RegExpMatchArray | null;
 
-        // Update result item with failure details
-        result.markFailed(message, messageDetail, failureType, expectedValue, actualValue, dataSetIdentifier);
+        // Check first of all for teamcity records in the log
+        let recordType;
+        let attributes = new Map<string, string>();
+        m = line.matchAll(patternTeamCityRecord);
+        for (let match of m) {
+            if (match[0].startsWith('##teamcity')) {
+                recordType = match.at(1)!;
+            } else if (match.at(2) && match.at(3)) {
+                attributes.set(match.at(2)!.trim(), match.at(3)!.trim());
+            }
+        }
+        if (recordType) {
+            switch (recordType) {
+                case 'testSuiteStarted':
+                    this.processLineTestSuiteStarted(attributes);
+                    break;
+                case 'testSuiteFinished':
+                    this.processLineTestSuiteFinished(attributes);
+                    break;
+                case 'testStarted':
+                    this.processLineTestStarted(attributes);
+                    break;
+                case 'testFailed':
+                    this.processLineTestFailed(attributes);
+                    break;
+                case 'testFinished':
+                    this.processLineTestFinished(attributes);
+                    break;
+                case 'testIgnored':
+                    this.processLineTestIgnored(attributes);
+                    break;
+            }
+        } else if (n = line.match(patternSummaryOk)) {
+            this.processLineTestSummaryOk(n);
+        } else if (n = line.match(patternSummaryNotOk)) {
+            m = line.matchAll(patternSummaryNotOk);
+            this.processLineTestSummaryNotOk(m);
+        } else if (n = line.match(patternFatalError)) {
+            this.processLineFatalError(n);
+        }
+    }
 
-        // Check settings to see whether we need to display the output window
-        if (this.settings.get('log.autoDisplayOutput', 'testRunFailures') === 'testRunFailures') {
+    private processLineTestSuiteStarted(attributes: Map<string, string>) {
+        // Extract test suite details from the matched line
+        let testSuiteName = attributes.get('name');
+        let testSuiteLocation = this.parseLocationHintString(attributes.get('locationHint'));
+
+        this.activeTestSuiteName = '';
+        if (testSuiteName) {
+            this.activeTestSuiteName = testSuiteName;
+        }
+
+        this.activeTestSuiteUri = '';
+        if (testSuiteLocation.uri) {
+            this.activeTestSuiteUri = testSuiteLocation.uri;
+        }
+
+        this.activeTestSuiteClassname = '';
+        if (testSuiteLocation.classname) {
+            this.activeTestSuiteClassname = testSuiteLocation.classname;
+        }
+    }
+
+    private processLineTestSuiteFinished(attributes: Map<string, string>) {
+        this.activeTestSuiteName = '';
+        this.activeTestSuiteUri = '';
+        this.activeTestSuiteClassname = '';
+    }
+
+    private processLineTestStarted(attributes: Map<string, string>) {
+        // Extract test details from the matched line
+        let name = attributes.get('name');
+        let location = this.parseLocationHintString(attributes.get('locationHint'));
+        if (!name || !location.uri) {
+            this.logger.warn(`Unable to parse test location hint: ${attributes.get('locationHint')}`);
+            return;
+        }
+
+        // Generate URI for the test file
+        let uri = vscode.Uri.file(location.uri);
+        let methodParts = this.parseTestNameString(location.method);
+
+        // Locate TestItem for the test
+        let id = generateTestItemId(ItemType.method, uri, methodParts.method);
+        let testItem = this.testItems.get(id);
+        if (!testItem) {
+            this.logger.warn(`Unable to find test item for test: ${id}`);
+            return;
+        }
+
+        // Create test result for the located test item
+        this.activeTestResult = new TestResult(name, testItem);
+        this.activeTestResult.markStarted();
+
+        // Update the test run to indicate that the test item has started
+        this.run.started(testItem);
+        if (methodParts.dataSetId) {
+            this.logger.trace(`Starting test execution for test: ${id} for data set ${methodParts.dataSetId}`);
+        } else {
+            this.logger.trace(`Starting test execution for test: ${id}`);
+        }
+        
+    }
+
+    private processLineTestFailed(attributes: Map<string, string>) {
+        // Extract test details and error reasons from the matched line
+        let name = attributes.get('name');
+        let message = attributes.get('message');
+        let details = attributes.get('details');
+        let duration = attributes.get('duration');
+        let type = attributes.get('type');
+        let actualResult = attributes.get('actual');
+        let expectedResult = attributes.get('expected');
+
+        // Extract detail from the test name
+        let nameParts = this.parseTestNameString(name);
+
+        // Failed tests may sometimes not have a 'test started' message - these are recorded by
+        // PHPUnit as errors (rather than failures). We need to start the test and then mark it as errored.
+        if (!this.activeTestResult || this.activeTestResult.getName() !== name) {
+            return this.processLineTestErrored(attributes);
+            
+        }
+        
+        // Validate that the matched line relates to the active test result
+        if (this.activeTestResult.getName() !== name) {
+            this.logger.warn(`Test result mismatch - test failure record is for test named '${name}' while currently active test result is named ${this.activeTestResult.getName()}`);
+            return;
+        }
+
+        // Mark the test result as failed
+        this.activeTestResult.markFailed(message, details, type, expectedResult, actualResult, nameParts.dataSetId);
+        if (duration) {
+            this.activeTestResult.setDuration(parseInt(duration));
+        }
+
+        // Update the test summary with the final result
+        let outputMessage = this.summary.addTestResult(this.activeTestResult);
+        this.run.failed(this.activeTestResult.getTestItem(), outputMessage!, this.activeTestResult.getDuration());
+        
+        // Print failure details to the log
+        this.logger.error(`❌ FAILED: ${this.activeTestResult.getTestItem().id}`);
+        this.logger.error(`      - Failure reason: ${this.activeTestResult.getMessage()}`);
+        if (this.activeTestResult.getFailureType()) {
+            this.logger.error(`      - Failure type: ${this.activeTestResult.getFailureType()}`);
+        }
+        if (this.activeTestResult.getActualValue()) {
+            this.logger.error(`      - Actual value: ${this.activeTestResult.getActualValue()}`);
+        }
+        if (this.activeTestResult.getDataSetIdentifier()) {
+            this.logger.error(`      - Data set number: ${this.activeTestResult.getDataSetIdentifier()}`);
+        }
+        if (this.activeTestResult.getMessageDetail()) {
+            this.logger.error(`      - Failure detail: ${this.activeTestResult.getMessageDetail()}`);
+        }
+
+        // If setting is enabled, display the output window to show the test failure
+        if (this.settings.get('log.autoDisplayOutput', 'errorsOnly') === 'testRunFailures') {
+            this.logger.showOutputChannel();
+        }
+    }
+
+    private processLineTestErrored(attributes: Map<string, string>) {
+        // Extract test details and error reasons from the matched line
+        let name = attributes.get('name');
+        let message = attributes.get('message');
+        let details = attributes.get('details');
+        let duration = attributes.get('duration');
+        let type = attributes.get('type');
+        let actualResult = attributes.get('actual');
+        let expectedResult = attributes.get('expected');
+
+        // Locate TestItem for the test
+        let nameParts = this.parseTestNameString(name);
+        let uri = vscode.Uri.file(this.activeTestSuiteUri);
+        let id = generateTestItemId(ItemType.method, uri, nameParts.method);
+        let testItem = this.testItems.get(id);
+        if (!testItem) {
+            this.logger.warn(`Unable to find test item for test failing in error: ${id}`);
+            return;
+        }
+
+        // Create test result for the located test item
+        this.activeTestResult = new TestResult(name!, testItem);
+        this.activeTestResult.markStarted();
+
+        // Update the test run to indicate that the test item has started
+        this.run.started(testItem);
+        this.logger.trace(`Starting test execution for test: ${id}`);
+
+        // Update the test summary with the final result
+        this.activeTestResult.markErrored(message, details, type, expectedResult, actualResult, nameParts.dataSetId);
+        let outputMessage = this.summary.addTestResult(this.activeTestResult);
+        this.run.errored(this.activeTestResult.getTestItem(), outputMessage!, this.activeTestResult.getDuration());
+        
+        // Print failure details to the log
+        this.logger.error(`❗ ERROR: ${this.activeTestResult.getTestItem().id}`);
+        this.logger.error(`      - Failure reason: ${this.activeTestResult.getMessage()}`);
+        if (this.activeTestResult.getFailureType()) {
+            this.logger.error(`      - Failure type: ${this.activeTestResult.getFailureType()}`);
+        }
+        if (this.activeTestResult.getActualValue()) {
+            this.logger.error(`      - Actual value: ${this.activeTestResult.getActualValue()}`);
+        }
+        if (this.activeTestResult.getDataSetIdentifier()) {
+            this.logger.error(`      - Data set number: ${this.activeTestResult.getDataSetIdentifier()}`);
+        }
+        if (this.activeTestResult.getMessageDetail()) {
+            this.logger.error(`      - Failure detail: ${this.activeTestResult.getMessageDetail()}`);
+        }
+
+        // If setting is enabled, display the output window to show the test failure
+        if (this.settings.get('log.autoDisplayOutput', 'errorsOnly') === 'testRunFailures') {
             this.logger.showOutputChannel();
         }
 
-        // Print details to log
-        this.logger.error(`❌ FAILED: ${result.getTestItem().id}`);
-        this.logger.error(`      - Failure reason: ${result.getMessage()}`);
-        if (result.getFailureType()) {
-            this.logger.error(`      - Failure type: ${result.getFailureType()}`);
-        }
-        if (result.getActualValue()) {
-            this.logger.error(`      - Actual value: ${result.getActualValue()}`);
-        }
-        if (result.getDataSetIdentifier()) {
-            this.logger.error(`      - Data set number: ${result.getDataSetIdentifier()}`);
-        }
-        if (result.getMessageDetail()) {
-            this.logger.error(`      - Failure detail: ${result.getMessageDetail()}`);
-        }
+        // Reset the current active test result to empty
+        this.activeTestResult = undefined;
     }
 
-    private processLineTestIgnored(line: string, result?: TestResult): void {
-        if (!result) {
+    private processLineTestFinished(attributes: Map<string, string>) {
+        // Extract test details from the matched line
+        let name = attributes.get('name');
+        let duration = attributes.get('duration');
+
+        // If there is no active test result, then it has already been finalised (i.e. an error or ignore record without a preceding 'test started' message)
+        if (!this.activeTestResult) {
+            this.logger.trace(`Test result already finalised for test named '${name}'`);
             return;
         }
 
-        // Get test details and failure message
-        let testMessage = line.match(patternTestAttribMessage)?.at(1);
-        let testMessageDetail = line.match(patternTestAttribDetails)?.at(1);
-        
-        // Update result item with reason why test was ignored
-        result.markIgnored(testMessage, testMessageDetail);
-
-        // Print details to log
-        this.logger.info(`➖ IGNORED: ${result.getTestItem().id}`, false, {testItem: result.getTestItem()});
-    }
-
-    private processLineTestFinished(line: string, result?: TestResult): void {
-        if (!result) {
+        // Ignored tests may sometimes not have a 'test started' message - in this case, we need to set a new active test result
+        if (this.activeTestResult.getName() !== name) {
+            this.logger.warn(`Test result mismatch - test finished record found for test named '${name}', which is different from the current active test named '${this.activeTestResult?.getName()}'`);
             return;
         }
 
-        // Get test details and duration
-        let duration = 0;
-        let testDuration = line.match(patternTestAttribDuration)?.at(1);
-        if (testDuration) {
-            duration = parseInt(testDuration);
-            result.setDuration(duration);
+        // Set or update test duration
+        if (duration) {
+            this.activeTestResult.setDuration(parseInt(duration));
         }
 
-        // If the result is not failed or ignored, assume the test has completed successfully
-        let status = result.getStatus();
-        if (status !== TestResultStatus.failed && status !== TestResultStatus.ignored) {
-            // Update result item as passed
-            result.markPassed();
+        // Get details of the active test result
+        let testItem = this.activeTestResult.getTestItem();
+        let currentStatus = this.activeTestResult.getStatus();
+        let datasetIdentifier = this.activeTestResult.getDataSetIdentifier();
 
-            // Print details to log
-            this.logger.info(`✅ PASSED: ${result.getTestItem().id}`);
-        }
-        let testMessage = this.resultMap.addResult(result);
+        // Set finalised test status and update the test run with the final result
+        if (currentStatus === TestResultStatus.started || currentStatus === TestResultStatus.passed) {
+            // Mark finished test as passed
+            this.activeTestResult.markPassed();
+            if (datasetIdentifier) {
+                this.logger.info(`✅ PASSED: ${this.activeTestResult.getTestItem().id} for dataset ${datasetIdentifier}`);
+            } else {
+                this.logger.info(`✅ PASSED: ${this.activeTestResult.getTestItem().id}`);
+            }
 
-        // Update the test run with the aggregated messages and status for all executions of the test item.
-        // Multiple executions will take place when a data provider has more than one set of data
-        let testItem = result.getTestItem();
-        let finalResult = this.resultMap.getTestStatus(testItem);
-        switch (finalResult) {
-            case TestResultStatus.failed:
-            case TestResultStatus.error:
-                this.run.failed(testItem, testMessage!, this.resultMap.getTestDuration(testItem));
-                break;
-            case TestResultStatus.ignored:
-            case TestResultStatus.skipped:
-                this.run.skipped(testItem);
-                break;
-            case TestResultStatus.passed:
-                this.run.passed(testItem, this.resultMap.getTestDuration(testItem));
-                break;
-            default:
-                // Not currently recording any other statuses
-                break;
+            this.summary.addTestResult(this.activeTestResult);
+            this.run.passed(testItem, this.activeTestResult.getDuration());
         }
+
+        // Reset the current active test result to empty
+        this.activeTestResult = undefined;
     }
 
-    private processLineTestSummaryOk(matches: RegExpMatchArray): void {
-        this.resultMap.setNumTestResults(parseInt(matches.at(1)!));
-        this.resultMap.setNumAssertions(parseInt(matches.at(3)!));
+    private processLineTestIgnored(attributes: Map<string, string>) {
+        // Extract test details and error reasons from the matched line
+        let name = attributes.get('name');
+        let message = attributes.get('message');
+        let duration = attributes.get('duration');
+
+        // Ignored tests may sometimes not have a 'test started' message - in this case, we need to set a new active test result
+        if (!this.activeTestResult || this.activeTestResult.getName() !== name) {
+            // Locate TestItem for the test
+            let nameParts = this.parseTestNameString(name);
+            let uri = vscode.Uri.file(this.activeTestSuiteUri);
+            let id = generateTestItemId(ItemType.method, uri, nameParts.method);
+            let testItem = this.testItems.get(id);
+            if (!testItem) {
+                this.logger.warn(`Unable to find test item for ignored test: ${id}`);
+                return;
+            }
+
+            // Create test result for the located test item
+            this.activeTestResult = new TestResult(name!, testItem);
+            this.activeTestResult.markStarted();
+
+            // Update the test run to indicate that the test item has started
+            this.run.started(testItem);
+            this.logger.trace(`Starting test execution for test: ${id}`);
+        }
+
+        // Mark test result as ignored, and include reason message
+        this.activeTestResult.markIgnored(message);
+
+        // Update the test summary with the final result
+        let outputMessage = this.summary.addTestResult(this.activeTestResult);
+        this.run.skipped(this.activeTestResult.getTestItem());
+
+        // Print ignored test details to the log
+        this.logger.info(`➖ IGNORED: ${this.activeTestResult.getTestItem().id}`, false, {testItem: this.activeTestResult.getTestItem()});
+
+        // Reset the current active test result to empty
+        this.activeTestResult = undefined;
     }
 
-    private processLineTestSummaryNotOk(line: string, matches: RegExpMatchArray): void {
-        this.resultMap.setNumTestResults(parseInt(matches.at(2)!));
-        this.resultMap.setNumAssertions(parseInt(matches.at(4)!));
+    private processLineTestSummaryOk(matches: RegExpMatchArray) {
+        // Extract test summary values from the matched line
+        let tests = parseInt(matches.at(1)!);
+        let assertions = parseInt(matches.at(3)!);
 
-        // Check for skipped tests
-        let m: RegExpMatchArray | null;
-        if (m = line.match(patternSummaryNotOkSkipped)) {
-            this.resultMap.setNumSkipped(parseInt(m.at(1)!));
+        // Set reported summary values
+        this.summary.setReportedSummaryCounts(tests, assertions, 0, 0, 0, 0, 0);
+    }
+
+    private processLineTestSummaryNotOk(matches: IterableIterator<RegExpMatchArray>) {
+        // Extract test summary values from the matched line
+        let tests = 0;
+        let assertions = 0;
+        let failures = 0;
+        let warnings = 0;
+        let skipped = 0;
+        let errors = 0;
+        let risky = 0;
+        for (let match of matches) {
+            if (match.at(1) === 'Tests' && match.at(2)) {
+                tests = parseInt(match.at(2)!);
+            } else if (match.at(1) === 'Assertions' && match.at(2)) {
+                assertions = parseInt(match.at(2)!);
+            } else if (match.at(1) === 'Failures' && match.at(2)) {
+                failures = parseInt(match.at(2)!);
+            } else if (match.at(1) === 'Warnings' && match.at(2)) {
+                warnings = parseInt(match.at(2)!);
+            } else if (match.at(1) === 'Skipped' && match.at(2)) {
+                skipped = parseInt(match.at(2)!);
+            } else if (match.at(1) === 'Errors' && match.at(2)) {
+                errors = parseInt(match.at(2)!);
+            } else if (match.at(1) === 'Risky' && match.at(2)) {
+                risky = parseInt(match.at(2)!);
+            }
+        }
+        this.summary.setReportedSummaryCounts(tests, assertions, failures, warnings, skipped, errors, risky);
+    }
+
+    private processLineFatalError(matches: RegExpMatchArray) {
+        // Extract error message from matched line
+        let message = matches.at(1)!;
+
+        // Log error message directly and pop error message to the user
+        this.logger.error(`Fatal error occurred while running tests: ${message}\n`);
+        vscode.window.showErrorMessage('Fatal error occurred while executing PHPUnit test run', { detail: message, modal: false }, 'View output').then(item => {
+            if (item === 'View output') {
+                this.logger.showOutputChannel();
+            }
+        });
+    }
+
+    private parseLocationHintString(locationHint?: string): {uri?: string, classname?: string, method?: string} {
+        if (!locationHint) {
+            return {uri: undefined, classname: undefined, method: undefined};
+        }
+        let parts = locationHint.split('::');
+        let uri = parts.at(0)?.replace('php_qn://', '');
+
+        return {
+            uri: uri,
+            classname: parts.at(1),
+            method: parts.at(2)
+        };
+    }
+
+    private parseTestNameString(name?: string): {method?: string, dataSetId?: string} {
+        if (!name) {
+            return {method: undefined, dataSetId: undefined};
         }
 
-        // Check for failed tests
-        if (m = line.match(patternSummaryNotOkFailures)) {
-            this.resultMap.setNumFailed(parseInt(m.at(1)!));
+        let method = name;
+        let dataSetId = undefined;
+        if (name.includes('with data set')) {
+            let parts = name.split('with data set');
+            method = parts.at(0)!.trim();
+            dataSetId = parts.at(1)?.trim();
         }
 
-        // Check for errored tests
-        if (m = line.match(patternSummaryNotOkErrors)) {
-            this.resultMap.setNumErrors(parseInt(m.at(1)!));
+        return {
+            method: method,
+            dataSetId: dataSetId
+        };
+    }
+
+    private parseDurationString(duration?: string): number {
+        if (!duration) {
+            return 0;
         }
+
+        let value = 0;
+        try {
+            value = parseInt(duration);
+        } catch (e) { }
+        return value;
     }
 }

@@ -1,14 +1,15 @@
 import { spawn } from 'child_process';
+import * as readline from 'readline';
 import * as vscode from 'vscode';
 import { Settings } from '../settings';
 import { Logger } from '../output';
 import { TestRunResultParser } from './TestRunResultParser';
 import { TestExecutionRequest } from './TestExecutionRequest';
-import { TestRunResultMap } from './TestRunResultMap';
 import { TestItemMap } from '../loader/tests/TestItemMap';
 import { DebugConfigQuickPickItem } from '../ui/DebugConfigQuickPickItem';
 import { TestResultStatus } from './TestResult';
 import { ContinuousTestRunDefinition } from './continuous/ContinuousTestRunDefinition';
+import { TestRunSummary } from './TestRunSummary';
 
 export class TestRunner {
     private ctrl: vscode.TestController;
@@ -87,13 +88,13 @@ export class TestRunner {
         // Dispatch each of the test execution requests in sequence
         for (let executionRequest of executionRequests) {
             if (cancel.isCancellationRequested !== true) {
-                let resultMap: TestRunResultMap = await this.dispatchExecutionRequest(run, executionRequest, cancel, debug);
+                let summary: TestRunSummary = await this.dispatchExecutionRequest(run, executionRequest, cancel, debug);
 
                 // Print execution summary to logs
-                this.logTestRunSummary(resultMap);
+                this.logTestRunSummary(summary);
 
                 // Add diagnostics to source code
-                this.logFailuresAsDiagnostics(resultMap, executionRequest.getWorkspaceFolder());
+                this.logFailuresAsDiagnostics(summary, executionRequest.getWorkspaceFolder());
             }
         }
 
@@ -102,7 +103,7 @@ export class TestRunner {
         run.end();
     }
 
-    private async dispatchExecutionRequest(run: vscode.TestRun, request: TestExecutionRequest, cancel: vscode.CancellationToken, debug: boolean = false): Promise<TestRunResultMap> {
+    private async dispatchExecutionRequest(run: vscode.TestRun, request: TestExecutionRequest, cancel: vscode.CancellationToken, debug: boolean = false): Promise<TestRunSummary> {
         let workspaceFolder = request.getWorkspaceFolder();
         
         // If test run is being debugged, prompt user to select debug configuration
@@ -163,131 +164,136 @@ export class TestRunner {
         // child process, see https://stackoverflow.com/questions/59798310/when-does-node-spawned-child-process-actually-start
         this.logger.trace('Executing child process:' + commandString + ' ' + commandArguments.join(' '));
         var child = spawn(commandString, commandArguments, {signal: abortController.signal});
-        
-        // Handle data written to stdout
-        child.stdout.setEncoding('utf-8');
-        child.stdout.on('data', (data) => {
-            this.logger.trace(data);
-            parser.parse(data);
-        });
 
         // Handle data written to stderr
         child.stderr.setEncoding('utf-8');
         child.stderr.on('data', (data) => {
-            this.logger.error(``);
-            this.logger.error(`---- fatal error ----`);
-            this.logger.error(data);
-            this.logger.error(`---------------------`);
-            if (this.settings.get('log.autoDisplayOutput', 'errorsOnly') !== 'never') {
-                this.logger.showOutputChannel();
+            this.writeFatalErrorToLog(data, run);
+        });
+
+        let buffer = '';
+        const reader = readline.createInterface({ input: child.stdout });
+        for await(let line of reader) {
+            buffer += line;
+            parser.parseLine(line);
+        }
+
+        // If test execution was running in debug mode, stop debugging on completion 
+        if (debug) {
+            vscode.debug.stopDebugging();
+        }
+
+        child.on('error', (error) => {
+            this.logger.trace('Error occurred managing the child process: ' + error);
+
+            // If test execution was running in debug mode, stop debugging on completion 
+            if (debug) {
+                vscode.debug.stopDebugging();
             }
+
+            return parser.getSummary();
         });
 
-        // Clean up when parser has finished processing 
-        return new Promise(resolve => {
-            child.on('close', (code) => {
-                this.logger.trace('Child process completed with exit code: ' + code);
-    
-                // If test execution was running in debug mode, stop debugging on completion 
-                if (debug) {
-                    vscode.debug.stopDebugging();
-                }
-    
-                if (parser.isParsing() === false) {
-                    resolve(parser.getResultMap());
-                }
-            });
+        child.on('exit', (code, signal) => {
+            this.logger.trace('Child process completed with exit code: ' + code);
+            
+            if (code && code > 0 && buffer !== '') {
+                this.writeFatalErrorToLog(buffer, run);
+            }
 
-            child.on('exit', (code) => {
-                this.logger.trace('Child process exited with exit code: ' + code);
-    
-                // If test execution was running in debug mode, stop debugging on completion 
-                if (debug) {
-                    vscode.debug.stopDebugging();
-                }
-    
-                if (parser.isParsing() === false) {
-                    resolve(parser.getResultMap());
-                }
-            });
+            // If test execution was running in debug mode, stop debugging on completion 
+            if (debug) {
+                vscode.debug.stopDebugging();
+            }
 
-            child.on('error', (err) => {
-                this.logger.error('Unable to start child process: ' + err);
-            });
-
-            parser.onParsingComplete((event) => {
-                this.logger.trace('Message parser completed processing queue');
-
-                // Only print out summary and resolve if the child process has also finished running
-                // (There may be situations where the parser runs out of messages to parse but the script
-                // is still running)
-                if (child.exitCode) {
-                    resolve(event.resultMap);
-                }
-            });
+            return parser.getSummary();
         });
+
+        return parser.getSummary();
     }
 
-    private logTestRunSummary(resultMap: TestRunResultMap) {
-        let numTestResults = resultMap.getNumTestResults();
-        let numTestItems = resultMap.getNumTestItems();
-        let numAssertions = resultMap.getNumAssertions();
-        let numSkipped = resultMap.getNumSkipped();
-        let numFailed = resultMap.getNumFailed();
-        let numErrors = resultMap.getNumErrors();
+    private writeFatalErrorToLog(error: string, run: vscode.TestRun) {
+        this.logger.error(``, false, { testRun: run });
+        this.logger.error(`---- fatal error ----`, false, { testRun: run });
+        this.logger.error(error, false, { testRun: run });
+        this.logger.error(`---------------------`, false, { testRun: run });
+        if (this.settings.get('log.autoDisplayOutput', 'errorsOnly') !== 'never') {
+            this.logger.showOutputChannel();
+        }
+    }
+
+    private logTestRunSummary(summary: TestRunSummary) {
+        // Get summary counts for values reported by the command line tool, and those captured by the extension
+        let reported = summary.getReportedSummaryCounts();
+        let actuals = summary.getActualSummaryCounts();
 
         // Created formatted output string
-        let output = `Test run completed: `;
-        if (numTestResults <= 0) {
-            output = output + `No test summary information available.`;
-        } else if (numTestResults === 1) {
-            output = output + `${numTestResults} test`;
+        let output = `Summary reported by PHPUnit   => `;
+        if (reported.tests <= 0) {
+            output += `No test summary information available.`;
         } else {
-            output = output + `${numTestResults} tests`;
+            output += `Tests: ${reported.tests}, Assertions: ${reported.assertions}`;
+            if (reported.failures > 0) {
+                output += `, Failures: ${reported.failures}`;
+            }
+            if (reported.warnings > 0) {
+                output += `, Warnings: ${reported.warnings}`;
+            }
+            if (reported.skipped > 0) {
+                output += `, Skipped: ${reported.skipped}`;
+            }
+            if (reported.errors > 0) {
+                output += `, Errors: ${reported.errors}`;
+            }
+            if (reported.risky > 0) {
+                output += `, Risky: ${reported.risky}`;
+            }
         }
-        if (numTestItems !== numTestResults && numTestItems === 1) {
-            output = output + ` (${numTestItems} unique test method)`;
-        } else if (numTestItems !== numTestResults && numTestItems > 1) {
-            output = output + ` (${numTestItems} unique test methods)`;
-        }
-        if (numAssertions === 1) {
-            output = output + `, ${numAssertions} assertion`;
-        } else if (numAssertions > 1) {
-            output = output + `, ${numAssertions} assertions`;
-        }
-        if (numSkipped > 0) {
-            output = output + `, ${numSkipped} skipped`;
-        }
-        if (numFailed > 0) {
-            output = output + `, ${numFailed} failed`;
-        }
-        if (numErrors > 0) {
-            output = output + `, ${numErrors} errored`;
+        output += `\r\nSummary captured by extension => `;
+        if (actuals.tests <= 0) {
+            output += `No test summary information available.`;
+        } else {
+            output += `Tests: ${actuals.tests}`;
+            if (actuals.passed > 0) {
+                output += `, Passed: ${actuals.passed}`;
+            }
+            if (actuals.failures > 0) {
+                output += `, Failures: ${actuals.failures}`;
+            }
+            if (actuals.warnings > 0) {
+                output += `, Warnings: ${actuals.warnings}`;
+            }
+            if (actuals.skipped > 0) {
+                output += `, Skipped: ${actuals.skipped}`;
+            }
+            if (actuals.errors > 0) {
+                output += `, Errors: ${actuals.errors}`;
+            }
         }
 
         // Print summary to log
         this.logger.info('');
-        this.logger.info('-'.repeat(output.length));
+        this.logger.info('-'.repeat(25));
         this.logger.info(output);
-        this.logger.info('-'.repeat(output.length));
+        this.logger.info('-'.repeat(25));
         this.logger.info('');
     }
 
-    private async logFailuresAsDiagnostics(resultMap: TestRunResultMap, workspaceFolder: vscode.WorkspaceFolder) {
+    private async logFailuresAsDiagnostics(summary: TestRunSummary, workspaceFolder: vscode.WorkspaceFolder) {
         if (this.settings.get('log.displayFailuresAsErrorsInCode', false, workspaceFolder) !== true) {
             return;
         }
 
-        let resultTestItems = resultMap.getTestItems();
+        let resultTestItems = summary.getTestItems();
         for (let testItem of resultTestItems) {
             // Only display diagnostics for test failures
-            let status = resultMap.getTestStatus(testItem);
+            let status = summary.getTestItemStatus(testItem);
             if (status !== TestResultStatus.failed) {
                 continue;
             }
 
             // Get the results for the test item
-            let results = resultMap.getTestResults(testItem);
+            let results = summary.getTestItemResults(testItem);
             for (let result of results) {
                 // Only display diagnostics if the test failure contains a message
                 let message = result.getMessage();
