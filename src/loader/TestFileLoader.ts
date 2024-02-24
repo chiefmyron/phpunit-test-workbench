@@ -22,6 +22,7 @@ export class TestFileLoader {
     private configParser: ConfigFileParser;
     private composerParser: ComposerFileParser;
     private testParser: TestFileParser;
+    private activeWorkspaceScan: boolean;
 
     constructor(
         ctrl: vscode.TestController,
@@ -41,6 +42,7 @@ export class TestFileLoader {
         this.composerParser = new ComposerFileParser(settings, logger);
         this.testParser = new TestFileParser(settings, logger);
         this.namespaceMap = new NamespaceMap();
+        this.activeWorkspaceScan = false;
     }
 
     /***********************************************************************/
@@ -349,6 +351,12 @@ export class TestFileLoader {
     ) {
         this.logger.trace('[File Loader] Parse workspace folder test files');
 
+        if (this.activeWorkspaceScan) {
+            this.logger.trace('[File Loader] A workspace scan is already active, skipping a second concurrent scan');
+            return;
+        }
+
+        this.activeWorkspaceScan = true;
         let statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left);
         statusBarItem.name = 'PHPUnit';
         statusBarItem.text = '$(loading~spin) Scanning workspace for tests...';
@@ -359,6 +367,7 @@ export class TestFileLoader {
                 await this.parseTestFile(testFileUri, workspaceFolder, testSuite);
             }
         }
+        this.activeWorkspaceScan = false;
         statusBarItem.dispose();
     }
 
