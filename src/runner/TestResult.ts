@@ -14,6 +14,7 @@ export enum TestResultStatus {
 }
 
 export class TestResult {
+    private name: string;
     private testItem: vscode.TestItem;
     private status: TestResultStatus;
     private message: string | undefined;
@@ -25,7 +26,8 @@ export class TestResult {
     private dataSetIdentifier: string | undefined;
     private duration: number;
 
-    constructor(testItem: vscode.TestItem) {
+    constructor(name: string, testItem: vscode.TestItem) {
+        this.name = name;
         this.testItem = testItem;
         this.status = TestResultStatus.unknown;
         this.duration = 0;
@@ -63,6 +65,27 @@ export class TestResult {
         this.setExpectedValue(expectedValue);
         this.setActualValue(actualValue);
         this.setDataSetIdentifier(dataSetIdentifier);
+    }
+
+    public markErrored(
+        message?: string,
+        messageDetail?: string,
+        failureType?: string,
+        expectedValue?: string,
+        actualValue?: string,
+        dataSetIdentifier?: string
+    ): void {
+        this.status = TestResultStatus.error;
+        this.setMessage(message);
+        this.setMessageDetail(messageDetail);
+        this.setFailureType(failureType);
+        this.setExpectedValue(expectedValue);
+        this.setActualValue(actualValue);
+        this.setDataSetIdentifier(dataSetIdentifier);
+    }
+
+    public getName(): string {
+        return this.name;
     }
 
     public getTestItem(): vscode.TestItem {
@@ -127,10 +150,10 @@ export class TestResult {
         // Replace linebreak characters and remove trailing spaces or linebreaks
         messageDetail = messageDetail.trim();
         messageDetail = messageDetail.replace(/\|n$/, '');
-        messageDetail = messageDetail.replace(/\|n/g, "\n");
+        messageDetail = messageDetail.replace(/\|n/g, "\r\n");
 
         // Check for specific error location (line number)
-        let messageDetailLines = messageDetail.split("\n"); 
+        let messageDetailLines = messageDetail.split("\r\n"); 
         let messageLine = messageDetailLines.pop();
         if (messageLine && messageLine.indexOf(':') > 0) {
             let messageLineParts = messageLine.split(':');

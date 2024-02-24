@@ -169,7 +169,7 @@
           "markdownDescription": "If using PSR-4 namespaces, use this setting to map your test namespace prefix to the test directory (as defined in the `phpunit-test-workbench.phpunit.testDirectory` setting). Default is blank - this assumes that either:\n  - Your `composer.json` file maps the namespaces for your test classes (recommended); or\n  - The folder structure inside your test directory matches the namespace structure exactly."
         },
         "phpunit-test-workbench.phpunit.useTestSuiteDefinitions": {
-          "scope": "machine",
+          "scope": "resource",
           "type": "boolean",
           "markdownDescription": "Use test suite definitions in your configuration file to locate and group tests in the Test Explorer. Note that using this option requires the use of a configuration file, and that the 'Test Directory' setting will be ignored."
         },
