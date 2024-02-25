@@ -138,7 +138,7 @@ export class TestResult {
         }
 
         // Replace linebreak characters
-        message = message.replace(/\|n/g, " ");
+        message = message.replace(/\|n/g, "\r\n");
         this.message = message;
     }
 
@@ -149,7 +149,7 @@ export class TestResult {
 
         // Replace linebreak characters and remove trailing spaces or linebreaks
         messageDetail = messageDetail.trim();
-        messageDetail = messageDetail.replace(/\|n$/, '');
+        messageDetail = messageDetail.replace(/\|n$/, '\r\n');
         messageDetail = messageDetail.replace(/\|n/g, "\r\n");
 
         // Check for specific error location (line number)
@@ -191,9 +191,18 @@ export class TestResult {
     }
 
     private parseTestValue(value: string): string {
+        // Strip escaped quotes from start and end
+        if (value.startsWith('|\'')) {
+            value = value.replace('|\'', '');
+        }
+        if (value.endsWith('|\'')) {
+            value = value.substring(0, (value.length - 2));
+        }
+        
         // Replace linebreak characters and remove trailing spaces or linebreaks
         value = value.trim();
         value = value.replace(/\|n$/, '');
+        value = value.replace(/\|r\|n/g, "\r\n");
         value = value.replace(/\|n/g, "\n");
         return value;
     }

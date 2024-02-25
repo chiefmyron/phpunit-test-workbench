@@ -130,24 +130,26 @@ export class TestRunSummary {
 
     private createTestMessage(result: TestResult): vscode.TestMessage {
         let message = new vscode.MarkdownString();
-        let dataSetIdentifier = result.getDataSetIdentifier();
-        if (dataSetIdentifier) {
-            message.appendMarkdown(`### ${result.getMessage()} _(with data set #${dataSetIdentifier})_`);
-        } else {
-            message.appendMarkdown(`### ${result.getMessage()}`);
-        }
+        message.supportHtml = true;
 
+        // Display reported message
+        message.appendMarkdown(`<pre>${result.getMessage()}</pre>`);
+
+        // Include the data set identifier if present
+        if (result.getDataSetIdentifier()) {
+            message.appendMarkdown(`\n\n**Data set:** \`${result.getDataSetIdentifier()}\``);
+        }
+        
         // Include the failure type if present
         if (result.getFailureType()) {
-            message.supportHtml = true;
             message.appendMarkdown(`\n\n**Failure type:** \`${result.getFailureType()}\``);
         }
 
         // If only the actual value is present, we cannot display as a diff - include the actual value in the markdown
-        let expectedValue = this.formatTestValue(result.getExpectedValue());
-        let actualValue = this.formatTestValue(result.getActualValue());
+        let expectedValue = result.getExpectedValue();
+        let actualValue = result.getActualValue();
         if (!expectedValue && actualValue) {
-            message.appendMarkdown(`\n\n**Actual value:** ${actualValue}`);
+            message.appendMarkdown(`\n\n**Actual value:** ${this.formatTestValue(actualValue)}`);
         }
 
         // Create TestMessage

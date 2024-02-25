@@ -201,6 +201,9 @@ export class TestRunResultParser extends vscode.EventEmitter<any> {
         if (this.activeTestResult.getFailureType()) {
             this.logger.error(`      - Failure type: ${this.activeTestResult.getFailureType()}`);
         }
+        if (this.activeTestResult.getExpectedValue()) {
+            this.logger.error(`      - Expected value: ${this.activeTestResult.getExpectedValue()}`);
+        }
         if (this.activeTestResult.getActualValue()) {
             this.logger.error(`      - Actual value: ${this.activeTestResult.getActualValue()}`);
         }
