@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.6.0] - 2024-02-26
+### New
+- Add support for continuous run test profiles ([#68](https://github.com/chiefmyron/phpunit-test-workbench/issues/68))
+- Add indicator to status bar when test detection is running ([#73](https://github.com/chiefmyron/phpunit-test-workbench/issues/73))
+
+### Changed
+- Tidy up logging and test results messages ([#81](https://github.com/chiefmyron/phpunit-test-workbench/issues/81))
+- Refactored test output parsing ([#82](https://github.com/chiefmyron/phpunit-test-workbench/issues/82))
+
+### Fixed
+- File watcher not triggering for test file on change while in a remote Dev Container ([#76](https://github.com/chiefmyron/phpunit-test-workbench/issues/76))
+- Prevent workspace scanning for test executing more than once at the same time ([#86](https://github.com/chiefmyron/phpunit-test-workbench/issues/86))
+
 ## [0.5.0] - 2023-05-17
 ### New
 - Use @testdox annotation as the label for test classes and methods ([#60](https://github.com/chiefmyron/phpunit-test-workbench/issues/60))
@@ -117,6 +130,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.1.0] - 2022-10-14
 - Initial release
 
+[0.6.0]: https://github.com/chiefmyron/phpunit-test-workbench/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/chiefmyron/phpunit-test-workbench/compare/v0.4.2...v0.5.0
 [0.4.2]: https://github.com/chiefmyron/phpunit-test-workbench/compare/v0.4.1...v0.4.2
 [0.4.1]: https://github.com/chiefmyron/phpunit-test-workbench/compare/v0.4.0...v0.4.1

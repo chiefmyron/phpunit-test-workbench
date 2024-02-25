@@ -81,6 +81,14 @@ An extension to integrate PHPUnit with the native Test Explorer functionality wi
 ![Execute tests via commands](docs/images/example-commands.gif)
 
 ## Release notes
+### v0.6.0 - 2024-02-26
+* __NEW:__ Add support for continuous run test profiles ([#68](https://github.com/chiefmyron/phpunit-test-workbench/issues/68))
+* __NEW:__ Add indicator to status bar when test detection is running ([#73](https://github.com/chiefmyron/phpunit-test-workbench/issues/73))
+* __CHANGED:__ Tidy up logging and test results messages ([#81](https://github.com/chiefmyron/phpunit-test-workbench/issues/81))
+* __CHANGED:__ Refactored test output parsing ([#82](https://github.com/chiefmyron/phpunit-test-workbench/issues/82))
+* __FIXED:__ File watcher not triggering for test file on change while in a remote Dev Container ([#76](https://github.com/chiefmyron/phpunit-test-workbench/issues/76))
+* __FIXED:__ Prevent workspace scanning for test executing more than once at the same time ([#86](https://github.com/chiefmyron/phpunit-test-workbench/issues/86))
+
 ### v0.5.0 - 2023-05-17
 * __NEW:__ Use @testdox annotation as the label for test classes and methods ([#60](https://github.com/chiefmyron/phpunit-test-workbench/issues/60))
 * __NEW:__ Add support for the @group annotation and attribute (and aliases) ([#61](https://github.com/chiefmyron/phpunit-test-workbench/issues/61))
