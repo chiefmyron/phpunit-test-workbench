@@ -58,7 +58,7 @@ export class Logger {
 
             // Log message to the test run output
             if (testRun && level > LogLevel.trace) {
-                message = message.replace('\n', '\r\n');
+                message = message.replace(/(?<![\r])\n/g, '\r\n');
                 testRun.appendOutput(message + '\r\n', location, params?.testItem);
             }
         }
