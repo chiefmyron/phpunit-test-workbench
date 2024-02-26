@@ -137,8 +137,8 @@ export class TestResult {
             return;
         }
 
-        // Replace linebreak characters
-        message = message.replace(/\|n/g, "\r\n");
+        // Replace linebreak characters and remove trailing spaces or linebreaks
+        message = this.parseEscapedTeamcityString(message);
         this.message = message;
     }
 
@@ -148,9 +148,7 @@ export class TestResult {
         }
 
         // Replace linebreak characters and remove trailing spaces or linebreaks
-        messageDetail = messageDetail.trim();
-        messageDetail = messageDetail.replace(/\|n$/, '\r\n');
-        messageDetail = messageDetail.replace(/\|n/g, "\r\n");
+        messageDetail = this.parseEscapedTeamcityString(messageDetail);
 
         // Check for specific error location (line number)
         let messageDetailLines = messageDetail.split("\r\n"); 
@@ -173,14 +171,14 @@ export class TestResult {
         if (!expectedValue || expectedValue.length <= 0) {
             return;
         }
-        this.expectedValue = this.parseTestValue(expectedValue);
+        this.expectedValue = this.parseEscapedTeamcityString(expectedValue);
     }
 
     private setActualValue(actualValue?: string): void {
         if (!actualValue || actualValue.length <= 0) {
             return;
         }
-        this.actualValue = this.parseTestValue(actualValue);
+        this.actualValue = this.parseEscapedTeamcityString(actualValue);
     }
 
     private setDataSetIdentifier(dataSetIdentifier?: string): void {
@@ -190,20 +188,14 @@ export class TestResult {
         this.dataSetIdentifier = dataSetIdentifier;
     }
 
-    private parseTestValue(value: string): string {
-        // Strip escaped quotes from start and end
-        if (value.startsWith('|\'')) {
-            value = value.replace('|\'', '');
-        }
-        if (value.endsWith('|\'')) {
-            value = value.substring(0, (value.length - 2));
-        }
-        
-        // Replace linebreak characters and remove trailing spaces or linebreaks
-        value = value.trim();
-        value = value.replace(/\|n$/, '');
-        value = value.replace(/\|r\|n/g, "\r\n");
-        value = value.replace(/\|n/g, "\n");
-        return value;
+    private parseEscapedTeamcityString(value: string): string {
+        // Replace escaped characters
+        value = value.replace(/\|'/g, '\'');       // Single quote characters
+        value = value.replace(/\|"/g, '\"');       // Double quote characters
+        value = value.replace(/\|\[/g, '\[');      // Open square bracket
+        value = value.replace(/\|\]/g, '\]');      // Close square bracket
+        value = value.replace(/\|r\|n/g, '\r\n');  // Carriage return + line break
+        value = value.replace(/\|n/g, '\n');       // Line break only
+        return value.trim();
     }
 }
