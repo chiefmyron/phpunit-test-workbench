@@ -81,6 +81,9 @@ An extension to integrate PHPUnit with the native Test Explorer functionality wi
 ![Execute tests via commands](docs/images/example-commands.gif)
 
 ## Release notes
+### v0.6.1 - 2024-02-26
+* __FIXED:__ Pipe escaped characters still appearing in expected / actual result values ([#87](https://github.com/chiefmyron/phpunit-test-workbench/issues/87))
+
 ### v0.6.0 - 2024-02-26
 * __NEW:__ Add support for continuous run test profiles ([#68](https://github.com/chiefmyron/phpunit-test-workbench/issues/68))
 * __NEW:__ Add indicator to status bar when test detection is running ([#73](https://github.com/chiefmyron/phpunit-test-workbench/issues/73))

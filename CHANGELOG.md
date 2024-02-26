@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.6.1] - 2024-02-26
+### New
+- Pipe escaped characters still appearing in expected / actual result values ([#87](https://github.com/chiefmyron/phpunit-test-workbench/issues/87))
+
 ## [0.6.0] - 2024-02-26
 ### New
 - Add support for continuous run test profiles ([#68](https://github.com/chiefmyron/phpunit-test-workbench/issues/68))
@@ -130,6 +134,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.1.0] - 2022-10-14
 - Initial release
 
+[0.6.1]: https://github.com/chiefmyron/phpunit-test-workbench/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/chiefmyron/phpunit-test-workbench/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/chiefmyron/phpunit-test-workbench/compare/v0.4.2...v0.5.0
 [0.4.2]: https://github.com/chiefmyron/phpunit-test-workbench/compare/v0.4.1...v0.4.2
