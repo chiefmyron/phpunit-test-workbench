@@ -136,10 +136,20 @@ export class EventDispatcher {
         }
     }
 
-    public async handleNewTestRunRequest(request: vscode.TestRunRequest, cancel: vscode.CancellationToken, debug: boolean = false) {
+    /**
+     * Routes new test run requests to the appropriate handler. Continuous test runs have their locator patterns registered with the 
+     * test runner for monitoring. All other test run requests (including debug or coverage runs) are passed directly onto the test runner
+     * for immediate execution.
+     * 
+     * @param request vscode.TestRunRequest
+     * @param cancel vscode.CancellationToken
+     * @param debug boolean
+     * @param coverage boolean
+     */
+    public async handleNewTestRunRequest(request: vscode.TestRunRequest, cancel: vscode.CancellationToken, debug: boolean = false, coverage: boolean = false) {
         // Check if the request is for a continuous test run
         if (!request.continuous) {
-            await this.runner.run(request, cancel, debug);
+            await this.runner.run(request, cancel, debug, coverage);
             return;
         }
 

@@ -1,3 +1,4 @@
+import * as os from 'os';
 import * as vscode from 'vscode';
 import { Logger } from '../output';
 import { Settings } from '../settings';
@@ -8,6 +9,8 @@ export class TestExecutionRequest {
     private logger: Logger;
     private workspaceFolder: vscode.WorkspaceFolder;
     private targetClassOrFolder?: vscode.Uri;
+    private pathCoverageSourceFolder?: vscode.Uri;
+    private pathCoverageOutputFile?: vscode.Uri;
     private argsEnv: Map<string, string>;
     private argsPhp: Map<string, string>;
     private argsPhpUnit: Map<string, string>;
@@ -27,30 +30,43 @@ export class TestExecutionRequest {
         this.pathConfigPhpUnit = '';
     }
 
-    public static createForWorkspaceFolder(
+    public static async createForWorkspaceFolder(
         workspaceFolder: vscode.WorkspaceFolder,
         settings: Settings,
         logger: Logger,
+        coverage: boolean = false,
         tagId?: string
-    ): TestExecutionRequest | undefined {
+    ): Promise<TestExecutionRequest | undefined> {
+        // If running with code coverage, check that a coverage driver has been selected
+        if (coverage && settings.get('phpunit.coverageDriver', 'none') === 'none') {
+            logger.warn(`No code coverage driver selected in extension settings`);
+            return;
+        }
+
         // Create initial request
         let request = new TestExecutionRequest(settings, workspaceFolder, logger);
 
         // If the test queue is being run for a specific tag
         if (tagId) {
-            request.setArgPhpUnit('--group', tagId);
+            request.setParamsForTag(tagId);
+        }
+
+        // If the test queue is being run with code coverage
+        if (coverage) {
+            await request.setParamsForCodeCoverage();
         }
 
         return request;
     }
 
-    public static createForTestItem(
+    public static async createForTestItem(
         item: vscode.TestItem,
         definition: TestItemDefinition,
         settings: Settings,
         logger: Logger,
+        coverage: boolean = false,
         tagId?: string
-    ): TestExecutionRequest | undefined {
+    ): Promise<TestExecutionRequest | undefined> {
         if (!item.uri) {
             logger.warn(`Target TestItem does not have a valid URI and cannot be executed`);
             return;
@@ -60,6 +76,12 @@ export class TestExecutionRequest {
         let workspaceFolder = vscode.workspace.getWorkspaceFolder(item.uri);
         if (!workspaceFolder) {
             logger.warn(`Unable to locate workspace folder for ${item.uri}`);
+            return;
+        }
+
+        // If running with code coverage, check that a coverage driver has been selected
+        if (coverage && settings.get('phpunit.coverageDriver', 'none') === 'none') {
+            logger.warn(`No code coverage driver selected in extension settings`);
             return;
         }
 
@@ -89,10 +111,77 @@ export class TestExecutionRequest {
 
         // If the test queue is being run for a specific tag
         if (tagId) {
-            request.setArgPhpUnit('--group', tagId);
+            request.setParamsForTag(tagId);
+        }
+
+        // If the test queue is being run with code coverage
+        if (coverage) {
+            await request.setParamsForCodeCoverage();
         }
 
         return request;
+    }
+
+    public setParamsForTag(tagId: string) {
+        this.setArgPhpUnit('--group', tagId);
+    }
+
+    public async setParamsForCodeCoverage() {
+        let driver = this.settings.get('phpunit.coverageDriver', 'none');
+        let sourceFolder = this.settings.get('phpunit.coverageSourceDirectory');
+        let outputFolder = this.settings.get('phpunit.coverageOutputDirectory');
+
+        // Determine the top level source folder to run coverage analysis against
+        let sourceFolders = [
+            this.workspaceFolder.uri.with({ path: this.workspaceFolder.uri.path + '/src' }),
+            this.workspaceFolder.uri.with({ path: this.workspaceFolder.uri.path + '/lib' }),
+            this.workspaceFolder.uri.with({ path: this.workspaceFolder.uri.path + '/app' }),
+            this.workspaceFolder.uri
+        ];
+        if (sourceFolder && sourceFolder !== '') {
+            sourceFolders.unshift(sourceFolder);
+        }
+
+        // Use the first found source folder
+        for (let folder of sourceFolders) {
+            try {
+                await vscode.workspace.fs.stat(folder);
+            } catch (error: any) {
+                this.logger.info(`Code coverage source directory ${folder.fsPath} not found...`);
+                if (error instanceof vscode.FileSystemError) {
+                    this.logger.trace(error.message);
+                }
+                continue;
+            }
+
+            this.pathCoverageSourceFolder = folder;
+            break;
+        }
+
+        if (!this.pathCoverageSourceFolder) {
+            this.logger.warn('No valid directories found for code coverage source files! Test will be run without code coverage statistics being collected.');
+            return;
+        }
+
+        // Set coverage driver-specific PHP environment options
+        if (driver === 'xdebug') {
+            this.setArgPhp('-dxdebug.mode', 'coverage');
+        } else if (driver === 'pcov') {
+            this.setArgPhp('-dpcov.enabled', '1');
+            this.setArgPhp('-dpcov.directory', this.pathCoverageSourceFolder.fsPath);
+        }
+
+        // Set the output folder for the coverage file
+        this.pathCoverageOutputFile = vscode.Uri.file(os.tmpdir());
+        if (outputFolder) {
+            this.pathCoverageOutputFile = vscode.Uri.file(outputFolder);
+        }
+
+        // Set PHPUnit options for enabling code coverage
+        this.pathCoverageOutputFile = this.pathCoverageOutputFile.with({path: this.pathCoverageOutputFile.path + '/phpunit-coverage-' + Date.now() + '.xml'});
+        this.setArgPhpUnit('--coverage-clover', this.pathCoverageOutputFile.fsPath);
+        this.setArgPhpUnit('--coverage-filter', this.pathCoverageSourceFolder.fsPath);
+        this.setArgPhpUnit('--path-coverage');
     }
 
     public getWorkspaceFolder(): vscode.WorkspaceFolder {
@@ -101,6 +190,10 @@ export class TestExecutionRequest {
 
     public getTargetClassOrFolder(): vscode.Uri | undefined {
         return this.targetClassOrFolder;
+    }
+
+    public getCoverageOutputFileUri(): vscode.Uri | undefined {
+        return this.pathCoverageOutputFile;
     }
 
     public getArgsEnv(): Map<string, string> {

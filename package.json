@@ -191,6 +191,32 @@
           "markdownDescription": "Suffix used to identify test files within the test directory. If left blank, the PHPUnit default suffixes (`Test.php` and `.phpt`) will be used.",
           "default": "Test.php,.phpt"
         },
+        "phpunit-test-workbench.phpunit.coverageDriver": {
+          "scope": "resource",
+          "type": "string",
+          "enum": [
+            "none",
+            "pcov",
+            "xdebug"
+          ],
+          "enumItemLabels": [
+            "None",
+            "PCOV",
+            "Xdebug"
+          ],
+          "default": "none",
+          "markdownDescription": "Code coverage driver that PHPUnit will use to generate code coverage statistics. Either PCOV or Xdebug must be selected to enable code coverage functionality."
+        },
+        "phpunit-test-workbench.phpunit.coverageSourceDirectory": {
+          "scope": "resource",
+          "type": "string",
+          "markdownDescription": "Path to the folder containing source code that should be included in code coverage statistics. If left emtpy, PHPUnit Test Workbench will attempt to use `./src`, `./lib` or `./app` in that order. If none of these directories are found, the workspace root will be used (however, this is not recommended as it will include test files and vendor packages)."
+        },
+        "phpunit-test-workbench.phpunit.coverageOutputDirectory": {
+          "scope": "resource",
+          "type": "string",
+          "markdownDescription": "Path to the location where a generated code coverage file should be stored. If left empty, PHPUnit Test Workbench will attempt to save it to the system temporary directory."
+        },
         "phpunit-test-workbench.xdebug.clientPort": {
           "scope": "resource",
           "type": "integer",
@@ -248,6 +274,7 @@
   "dependencies": {
     "buffer": "^6.0.3",
     "child_process": "^1.0.2",
+    "fast-xml-parser": "^4.3.6",
     "php-parser": "^3.1.1",
     "stream-browserify": "^3.0.0",
     "timers-browserify": "^2.0.12",
