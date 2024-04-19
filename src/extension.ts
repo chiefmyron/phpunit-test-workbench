@@ -9,6 +9,7 @@ import { CommandHandler } from './ui/CommandHandler';
 import { TestRunner } from './runner/TestRunner';
 import { TestFileLoader } from './loader/TestFileLoader';
 import { EventDispatcher } from './ui/EventDispatcher';
+import { TestCoverageMap } from './runner/coverage/TestCoverageMap';
 
 // this method is called when your extension is activated
 // your extension is activated the very first time the command is executed
@@ -29,6 +30,7 @@ export function activate(context: vscode.ExtensionContext) {
     const testSuiteMap = new TestSuiteMap();
     const testItemMap = new TestItemMap();
     const testTagProfileMap = new Map<string, vscode.TestRunProfile>();
+    const testCoverageMap = new TestCoverageMap(logger);
 
     // Register events for the test item map to handle tagged tests
     testItemMap.onTestTagCreated(event => {
@@ -74,7 +76,7 @@ export function activate(context: vscode.ExtensionContext) {
 
     // Create test runner
     logger.trace(`Creating test runner`);
-    const runner = new TestRunner(ctrl, testItemMap, diagnosticCollection, settings, logger);
+    const runner = new TestRunner(ctrl, testItemMap, testCoverageMap, diagnosticCollection, settings, logger);
 
     // Create test file loader
     logger.trace('Creating test file loader');
@@ -93,20 +95,33 @@ export function activate(context: vscode.ExtensionContext) {
     ctrl.resolveHandler = async (item) => dispatcher.handleTestItemResolve(item);
 
     // Set up run profile
-    ctrl.createRunProfile(
+    let profileRunAll = ctrl.createRunProfile(
         'Run tests',
         vscode.TestRunProfileKind.Run,
-        (request, token) => { dispatcher.handleNewTestRunRequest(request, token, false); },
+        (request, token) => { dispatcher.handleNewTestRunRequest(request, token, false, false); },
         true,
         undefined,
         true
     );
-    ctrl.createRunProfile(
-        'Debug tests',
-        vscode.TestRunProfileKind.Debug,
-        (request, token) => { dispatcher.handleNewTestRunRequest(request, token, true); },
+    let profileRunAllCoverage = ctrl.createRunProfile(
+        'Run tests with coverage',
+        vscode.TestRunProfileKind.Coverage,
+        (request, token) => { dispatcher.handleNewTestRunRequest(request, token, false, true); },
+        true,
+        undefined,
         true
     );
+    let profileRunAllDebug = ctrl.createRunProfile(
+        'Debug tests',
+        vscode.TestRunProfileKind.Debug,
+        (request, token) => { dispatcher.handleNewTestRunRequest(request, token, true, true); },
+        true
+    );
+
+    // Register code coverage loader with appropriate run profile
+    profileRunAllCoverage.loadDetailedCoverage = async (run: vscode.TestRun, coverage: vscode.FileCoverage, token: vscode.CancellationToken) => {
+        return testCoverageMap.getDetailedMetrics(coverage);
+    };
 
     // Register command handlers
     context.subscriptions.push(

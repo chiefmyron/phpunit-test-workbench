@@ -1,6 +1,7 @@
 import { spawn } from 'child_process';
 import * as readline from 'readline';
 import * as vscode from 'vscode';
+import { promises as fs } from 'fs';
 import { Settings } from '../settings';
 import { Logger } from '../output';
 import { TestRunResultParser } from './TestRunResultParser';
@@ -10,10 +11,12 @@ import { DebugConfigQuickPickItem } from '../ui/DebugConfigQuickPickItem';
 import { TestResultStatus } from './TestResult';
 import { ContinuousTestRunDefinition } from './continuous/ContinuousTestRunDefinition';
 import { TestRunSummary } from './TestRunSummary';
+import { TestCoverageMap } from './coverage/TestCoverageMap';
 
 export class TestRunner {
     private ctrl: vscode.TestController;
     private itemMap: TestItemMap;
+    private coverageMap: TestCoverageMap;
     private diagnosticCollection: vscode.DiagnosticCollection;
     private settings: Settings;
     private logger: Logger;
@@ -21,9 +24,10 @@ export class TestRunner {
     private testDiagnosticMap: Map<string, vscode.Diagnostic[]>;
     private activeContinuousRuns: Map<vscode.RelativePattern, ContinuousTestRunDefinition>;
 
-    constructor(ctrl: vscode.TestController, itemMap: TestItemMap, diagnosticCollection: vscode.DiagnosticCollection, settings: Settings, logger: Logger) {
+    constructor(ctrl: vscode.TestController, itemMap: TestItemMap, coverageMap: TestCoverageMap, diagnosticCollection: vscode.DiagnosticCollection, settings: Settings, logger: Logger) {
         this.ctrl = ctrl;
         this.itemMap = itemMap;
+        this.coverageMap = coverageMap;
         this.diagnosticCollection = diagnosticCollection;
         this.settings = settings;
         this.logger = logger;
@@ -32,13 +36,25 @@ export class TestRunner {
         this.activeContinuousRuns = new Map<vscode.RelativePattern, ContinuousTestRunDefinition>();
     }
 
-    public async run(request: vscode.TestRunRequest, cancel: vscode.CancellationToken, debug: boolean = false) {
+    public async run(request: vscode.TestRunRequest, cancel: vscode.CancellationToken, debug: boolean = false, coverage: boolean = false) {
         // Initialise the test run
         const run = this.ctrl.createTestRun(request);
         const executionRequests: TestExecutionRequest[] = [];
         this.testItemQueue.clear();
         this.testDiagnosticMap.clear();
         this.diagnosticCollection.clear();
+
+        // Add handler to clean up test coverage temporary files when test run is disposed
+        if (coverage) {
+            run.onDidDispose(async () => {
+                for (let request of executionRequests) {
+                    let coverageFileUri = request.getCoverageOutputFileUri();
+                    if (coverageFileUri) {
+                        await fs.rm(coverageFileUri.fsPath, { recursive: true, force: true });
+                    }
+                }
+            });
+        }
 
         // Start test run logging
         this.logger.setTestRun(run);
@@ -58,7 +74,7 @@ export class TestRunner {
             this.testItemQueue = this.buildTestRunQueue(run, this.testItemQueue, parentTestItem, tagId);
 
             // Create TestExecutionRequest for the TestItem and add to the list of executions to be run
-            let testExecutionRequest = TestExecutionRequest.createForTestItem(parentTestItem, parentTestItemDef, this.settings, this.logger, tagId);
+            let testExecutionRequest = await TestExecutionRequest.createForTestItem(parentTestItem, parentTestItemDef, this.settings, this.logger, coverage, tagId);
             if (testExecutionRequest) {
                 executionRequests.push(testExecutionRequest);
             }
@@ -78,7 +94,7 @@ export class TestRunner {
 
             // Create a TestExecutionRequest for each unique workspace folder and add to the list of executions to be run
             for (let workspaceFolder of workspaceFolders) {
-                let testExecutionRequest = TestExecutionRequest.createForWorkspaceFolder(workspaceFolder, this.settings, this.logger, tagId);
+                let testExecutionRequest = await TestExecutionRequest.createForWorkspaceFolder(workspaceFolder, this.settings, this.logger, coverage, tagId);
                 if (testExecutionRequest) {
                     executionRequests.push(testExecutionRequest);
                 }
@@ -95,6 +111,14 @@ export class TestRunner {
 
                 // Add diagnostics to source code
                 this.logFailuresAsDiagnostics(summary, executionRequest.getWorkspaceFolder());
+
+                // If this is a code coverage run, process the results file now
+                if (coverage) {
+                    await this.coverageMap.loadCoverageFile(executionRequest.getCoverageOutputFileUri()!);
+                    for (let fileCoverage of this.coverageMap.getFileCoverage()) {
+                        run.addCoverage(fileCoverage);
+                    }
+                }
             }
         }
 
