@@ -15,6 +15,8 @@ export enum TestResultStatus {
 
 export class TestResult {
     private name: string;
+    private className: string;
+    private methodName: string;
     private testItem: vscode.TestItem;
     private status: TestResultStatus;
     private message: string | undefined;
@@ -31,6 +33,8 @@ export class TestResult {
         this.testItem = testItem;
         this.status = TestResultStatus.unknown;
         this.duration = 0;
+        this.className = '';
+        this.methodName = '';
     }
 
     public markStarted(): void {
@@ -130,6 +134,20 @@ export class TestResult {
 
     public setDuration(duration: number): void {
         this.duration = duration;
+    }
+
+    public setTestFileDetails(methodName: string, className?: string) {
+        this.methodName = methodName;
+        if (className) {
+            this.className = className;
+        }
+    }
+
+    public getFullyQualifiedTestMethod() {
+        if (this.methodName && this.className) {
+            return `${this.className}::${this.methodName}`;
+        }
+        return `${this.testItem.uri!.fsPath}::${this.name}`;
     }
 
     private setMessage(message?: string): void {

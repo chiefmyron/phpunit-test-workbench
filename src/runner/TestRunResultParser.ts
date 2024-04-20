@@ -147,6 +147,9 @@ export class TestRunResultParser extends vscode.EventEmitter<any> {
 
         // Create test result for the located test item
         this.activeTestResult = new TestResult(name, testItem);
+        if (location.method) {
+            this.activeTestResult.setTestFileDetails(location.method, location.classname);
+        }
         this.activeTestResult.markStarted();
 
         // Update the test run to indicate that the test item has started
@@ -196,7 +199,7 @@ export class TestRunResultParser extends vscode.EventEmitter<any> {
         this.run.failed(this.activeTestResult.getTestItem(), outputMessage!, this.activeTestResult.getDuration());
         
         // Print failure details to the log
-        this.logger.error(`❌ FAILED: ${this.activeTestResult.getTestItem().id}`);
+        this.logger.error(`❌ FAILED: ${this.activeTestResult.getFullyQualifiedTestMethod()}`);
         this.logger.error(`      - Failure reason: ${this.activeTestResult.getMessage()}`);
         if (this.activeTestResult.getFailureType()) {
             this.logger.error(`      - Failure type: ${this.activeTestResult.getFailureType()}`);
@@ -254,7 +257,7 @@ export class TestRunResultParser extends vscode.EventEmitter<any> {
         this.run.errored(this.activeTestResult.getTestItem(), outputMessage!, this.activeTestResult.getDuration());
         
         // Print failure details to the log
-        this.logger.error(`❗ ERROR: ${this.activeTestResult.getTestItem().id}`);
+        this.logger.error(`❗ ERROR: ${this.activeTestResult.getFullyQualifiedTestMethod()}`);
         this.logger.error(`      - Failure reason: ${this.activeTestResult.getMessage()}`);
         if (this.activeTestResult.getFailureType()) {
             this.logger.error(`      - Failure type: ${this.activeTestResult.getFailureType()}`);
@@ -310,9 +313,9 @@ export class TestRunResultParser extends vscode.EventEmitter<any> {
             // Mark finished test as passed
             this.activeTestResult.markPassed();
             if (datasetIdentifier) {
-                this.logger.info(`✅ PASSED: ${this.activeTestResult.getTestItem().id} for dataset ${datasetIdentifier}`);
+                this.logger.info(`✅ PASSED: ${this.activeTestResult.getFullyQualifiedTestMethod()} for dataset ${datasetIdentifier}`);
             } else {
-                this.logger.info(`✅ PASSED: ${this.activeTestResult.getTestItem().id}`);
+                this.logger.info(`✅ PASSED: ${this.activeTestResult.getFullyQualifiedTestMethod()}`);
             }
 
             this.summary.addTestResult(this.activeTestResult);
@@ -358,7 +361,7 @@ export class TestRunResultParser extends vscode.EventEmitter<any> {
         this.run.skipped(this.activeTestResult.getTestItem());
 
         // Print ignored test details to the log
-        this.logger.info(`➖ IGNORED: ${this.activeTestResult.getTestItem().id}`, false, {testItem: this.activeTestResult.getTestItem()});
+        this.logger.info(`➖ IGNORED: ${this.activeTestResult.getFullyQualifiedTestMethod()}`, false, {testItem: this.activeTestResult.getTestItem()});
 
         // Reset the current active test result to empty
         this.activeTestResult = undefined;
