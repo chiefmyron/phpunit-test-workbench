@@ -48,6 +48,13 @@ export class CommandHandler {
             commandTypeDesc = 'Debug';
         }
 
+        // If this is a rerun of the last test run, hand off immediately to the test runner
+        if (command === 'rerun') {
+            this.logger.info(`Rerunning last test run...`);
+            await this.runner.rerunMostRecentRunRequest(cancel);
+            return;
+        }
+
         switch (command) {
             case 'run.method':
             case 'debug.method':

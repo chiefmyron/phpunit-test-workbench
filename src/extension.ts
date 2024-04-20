@@ -138,7 +138,8 @@ export function activate(context: vscode.ExtensionContext) {
         vscode.commands.registerCommand('phpunit-test-workbench.debugSuite', () => commandHandler.execute('debug.suite')),
         vscode.commands.registerCommand('phpunit-test-workbench.debugSuiteWithTag', () => commandHandler.execute('debug.suite.tag')),
         vscode.commands.registerCommand('phpunit-test-workbench.debugAll', () => commandHandler.execute('debug.all')),
-        vscode.commands.registerCommand('phpunit-test-workbench.debugAllWithTag', () => commandHandler.execute('debug.all.tag'))
+        vscode.commands.registerCommand('phpunit-test-workbench.debugAllWithTag', () => commandHandler.execute('debug.all.tag')),
+        vscode.commands.registerCommand('phpunit-test-workbench.rerunLastTestRun', () => commandHandler.execute('rerun'))
     );
 
     // Register event handlers

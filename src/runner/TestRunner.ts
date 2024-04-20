@@ -23,6 +23,7 @@ export class TestRunner {
     private testItemQueue: Map<string, vscode.TestItem>;
     private testDiagnosticMap: Map<string, vscode.Diagnostic[]>;
     private activeContinuousRuns: Map<vscode.RelativePattern, ContinuousTestRunDefinition>;
+    private mostRecentTestRunRequest?: { request: vscode.TestRunRequest, debug: boolean, coverage: boolean };
 
     constructor(ctrl: vscode.TestController, itemMap: TestItemMap, coverageMap: TestCoverageMap, diagnosticCollection: vscode.DiagnosticCollection, settings: Settings, logger: Logger) {
         this.ctrl = ctrl;
@@ -125,6 +126,24 @@ export class TestRunner {
         // Close out the test run
         this.logger.setTestRun(undefined);
         run.end();
+
+        // Store as the most recent request so that it can be re-executed in the future
+        this.mostRecentTestRunRequest = { request: request, debug: debug, coverage: coverage };
+    }
+
+    public async rerunMostRecentRunRequest(cancel: vscode.CancellationToken) {
+        if (!this.mostRecentTestRunRequest) {
+            this.logger.error('Unable to re-run test, as no test runs have been completed successfully yet.', true);
+        }
+
+        let previousRequest = this.mostRecentTestRunRequest!;
+        let request = new vscode.TestRunRequest(
+            previousRequest.request.include,
+            previousRequest.request.exclude,
+            previousRequest.request.profile,
+            previousRequest.request.continuous
+        );
+        this.run(request, cancel, previousRequest.debug, previousRequest.coverage);
     }
 
     private async dispatchExecutionRequest(run: vscode.TestRun, request: TestExecutionRequest, cancel: vscode.CancellationToken, debug: boolean = false): Promise<TestRunSummary> {
@@ -220,10 +239,6 @@ export class TestRunner {
 
         child.on('exit', (code, signal) => {
             this.logger.trace('Child process completed with exit code: ' + code);
-            
-            // if (code && code > 0 && buffer !== '') {
-            //     this.writeFatalErrorToLog(buffer, run);
-            // }
 
             // If test execution was running in debug mode, stop debugging on completion 
             if (debug) {

@@ -83,6 +83,10 @@
       {
         "command": "phpunit-test-workbench.debugAllWithTag",
         "title": "PHPUnit: Debug all tests with tag"
+      },
+      {
+        "command": "phpunit-test-workbench.rerunLastTestRun",
+        "title": "PHPUnit: Re-execute last test run"
       }
     ],
     "configuration": {
