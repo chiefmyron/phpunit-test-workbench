@@ -883,7 +883,7 @@ export class TestFileLoader {
 
             // If we don't need to replace the TestItem, update with the latest details from the file
             if (replaceTestItem === false) {
-                item.label = label;
+                item.label = this.setLabelIcon(definition.getType(), label);
                 item.range = definition.getRange();
                 this.testItemMap.set(item, definition);
                 return item;
@@ -915,7 +915,7 @@ export class TestFileLoader {
             this.logger.trace('- Existing TestItem found for method: ' + label);
 
             // Update label and definition to match latest details from the file
-            item.label = label;
+            item.label = this.setLabelIcon(definition.getType(), label);
             item.range = definition.getRange();
             this.testItemMap.set(item, definition);
             return item;
@@ -940,6 +940,9 @@ export class TestFileLoader {
         uri: vscode.Uri,
         parent?: vscode.TestItem
     ): vscode.TestItem {
+        // Prepend icon to label
+        label = this.setLabelIcon(definition.getType(), label);
+        
         // Create the TestItem and register with the TestItem map
         let item = this.ctrl.createTestItem(id, label, uri);
         this.testItemMap.set(item, definition);
@@ -972,5 +975,21 @@ export class TestFileLoader {
             // If this was the last child of the parent, remove the parent as well
             this.removeTestItem(parent);
         }
+    }
+
+    private setLabelIcon(itemType: ItemType, label: string): string {
+        // Prepend label with appropriate icon
+        switch (itemType) {
+            case ItemType.namespace:
+                label = `$(symbol-namespace) ${label}`;
+                break;
+            case ItemType.class:
+                label = `$(symbol-class) ${label}`;
+                break;
+            case ItemType.method:
+                label = `$(symbol-method) ${label}`;
+                break;
+        }
+        return label;
     }
 }
