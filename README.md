@@ -19,7 +19,13 @@ An extension to integrate PHPUnit with the native Test Explorer functionality wi
 ## Requirements
 * __PHP:__ Version 7+
 * __PHPUnit:__ Version 9 & 10
+
+To run tests with debugging:
 * __XDebug:__ Version 3
+
+To run test coverage, either:
+* __XDebug:__ Version 3; or
+* __PCOV:__ Version appropriate to your PHP binary
 
 >PHP binary and PHPUnit must be installed on the environment where the tests are being run. 
 >
@@ -42,6 +48,7 @@ An extension to integrate PHPUnit with the native Test Explorer functionality wi
 |__PHPUnit: Debug test suite with tag__|`phpunit-test-workbench.debugSuiteWithTag`|Display a dialog allowing the user to select from the list of test suites found in configuration files. All test methods tagged with the selected group within the suite will be executed using the debugger.|
 |__PHPUnit: Debug all tests__|`phpunit-test-workbench.debugAll`|Debug all tests identified in the Test Explorer.|
 |__PHPUnit: Debug all tests with tag__|`phpunit-test-workbench.debugAllWithTag`|Debug all tests identified in the Test Explorer tagged with the selected group.|
+|__PHPUnit: Re-execute last test run__|`phpunit-test-workbench.rerunLastTestRun`|Re-run the most recent test run. This could be a regular run, a debug run, or a run including test coverage.|
 
 ## Configuration options
 |Option|Description|
@@ -55,6 +62,9 @@ An extension to integrate PHPUnit with the native Test Explorer functionality wi
 |`phpunit.locatorPatternConfigXml`|The glob describing the location of your configuration file (usually named `phpunit.xml`). The default pattern is `phpunit.xml`.|
 |`phpunit.testDirectory`|Relative path from the workspace folder root to the directory where tests should be executed from (usually the `tests` folder).|
 |`phpunit.testFileSuffix`|Suffix used to identify test files within the test directory. If left blank, PHPUnit default suffixes (`Test.php` and `.phpt`) will be used.|
+|`phpunit.coverageDriver`|Code coverage driver that PHPUnit will use to generate code coverage statistics. Either PCOV or Xdebug must be selected to enable code coverage functionality.|
+|`phpunit.coverageSourceDirectory`|Path to the folder containing source code that should be included in code coverage statistics. If left emtpy, PHPUnit Test Workbench will attempt to use `./src`, `./lib` or `./app` in that order. If none of these directories are found, the workspace root will be used (however, this is not recommended as it will include test files and vendor packages).|
+|`phpunit.coverageOutputDirectory`|Path to the location where a generated code coverage file should be stored. If left empty, PHPUnit Test Workbench will attempt to save it to the system temporary directory.|
 |`phpunit.testNamespacePrefix`|If using PSR-4 namespaces, use this setting to map your test namespace prefix to the test directory (as defined in the `phpunit-test-workbench.phpunit.testDirectory` setting). Default is blank - this assumes that either: <li>Your `composer.json` file maps the namespaces for your test classes (__recommended__); or</li><li>The folder structure inside your test directory matches the namespace structure exactly.</li>|
 |`phpunit.testOrganization`|Method used to organise and display tests in the Test Explorer:<li>__By file__: Show as a flat list of files, with test methods as children</li><li>__By namespace__: Hierarchical display, organized using the namespace structure (assumes compliance with [PSR-4](https://www.php-fig.org/psr/psr-4/))</li>|
 |`phpunit.useTestSuiteDefinitions`|Use test suite definitions within your configuration file to locate and group tests in the Test Explorer. Note that using this option requires a valid PHPUnit configuration file to be found via the `phpunit.locatorPatternConfigXml` glob pattern. Test suite definitions in the configuration file will ignore the `phpunit.testDirectory` setting.|
@@ -81,6 +91,11 @@ An extension to integrate PHPUnit with the native Test Explorer functionality wi
 ![Execute tests via commands](docs/images/example-commands.gif)
 
 ## Release notes
+### v0.7.0 - 2024-04-22
+* __NEW:__ Add namespace / class / method icons to items in Test Explorer ([#90](https://github.com/chiefmyron/phpunit-test-workbench/issues/90))
+* __NEW:__ Add new 'Rerun last test' command ([#89](https://github.com/chiefmyron/phpunit-test-workbench/issues/89))
+* __NEW:__ Add test coverage run profile ([#33](https://github.com/chiefmyron/phpunit-test-workbench/issues/33))
+
 ### v0.6.1 - 2024-02-26
 * __FIXED:__ Pipe escaped characters still appearing in expected / actual result values ([#87](https://github.com/chiefmyron/phpunit-test-workbench/issues/87))
 
