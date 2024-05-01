@@ -114,7 +114,7 @@ export function activate(context: vscode.ExtensionContext) {
     let profileRunAllDebug = ctrl.createRunProfile(
         'Debug tests',
         vscode.TestRunProfileKind.Debug,
-        (request, token) => { dispatcher.handleNewTestRunRequest(request, token, true, true); },
+        (request, token) => { dispatcher.handleNewTestRunRequest(request, token, true, false); },
         true
     );
 
