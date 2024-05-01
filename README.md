@@ -91,6 +91,9 @@ To run test coverage, either:
 ![Execute tests via commands](docs/images/example-commands.gif)
 
 ## Release notes
+### v0.7.1 - 2024-05-01
+* __FIXED:__ Debugging a test triggers code coverage ([#94](https://github.com/chiefmyron/phpunit-test-workbench/issues/94))
+
 ### v0.7.0 - 2024-04-22
 * __NEW:__ Add namespace / class / method icons to items in Test Explorer ([#90](https://github.com/chiefmyron/phpunit-test-workbench/issues/90))
 * __NEW:__ Add new 'Rerun last test' command ([#89](https://github.com/chiefmyron/phpunit-test-workbench/issues/89))
