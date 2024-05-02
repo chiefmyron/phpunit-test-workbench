@@ -69,18 +69,17 @@ export class EventDispatcher {
     }
 
     /**
-     * If the text file being changed is relevant to the extension (i.e. either a test file, or a PHPUnit 
+     * If the text file being saved is relevant to the extension (i.e. either a test file, or a PHPUnit 
      * configuration file), this event will trigger the loader to reparse the file for changes / additions
      * to TestItems within the file. 
      * 
      * If the file is within the scope of an active continuous test run, this event will also trigger a new
      * test run.
      * 
-     * @param event vscode.TextDocumentChangeEvent
+     * @param document vscode.TextDocument
      */
-    public async handleChangedTextDocument(event: vscode.TextDocumentChangeEvent) {
+    public async handleSavedTextDocument(document: vscode.TextDocument) {
         // Only need to parse actual source code files (prevents parsing of URIs with git scheme, for example)
-        let document = event.document;
         if (document.uri.scheme !== 'file') {
             return;
         }

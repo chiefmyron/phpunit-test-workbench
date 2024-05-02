@@ -917,6 +917,12 @@ export class TestFileLoader {
             // Update label and definition to match latest details from the file
             item.label = this.setLabelIcon(definition.getType(), label);
             item.range = definition.getRange();
+
+            // If the parent for the method has changed (i.e. the test class has been renamed), update it now
+            if (parent && item.parent?.id !== parent.id) {
+                parent.children.add(item);
+            }
+
             this.testItemMap.set(item, definition);
             return item;
         }
