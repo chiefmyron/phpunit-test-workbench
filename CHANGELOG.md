@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.7.2] - 2024-05-02
+### Fixed
+- Renaming a test class causes child methods to be "undetected" until full refresh of tests ([#96](https://github.com/chiefmyron/phpunit-test-workbench/issues/96))
+
 ## [0.7.1] - 2024-05-01
 ### Fixed
 - Debugging a test triggers code coverage ([#94](https://github.com/chiefmyron/phpunit-test-workbench/issues/94))
@@ -144,6 +148,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.1.0] - 2022-10-14
 - Initial release
 
+[0.7.2]: https://github.com/chiefmyron/phpunit-test-workbench/compare/v0.7.1...v0.7.2
 [0.7.1]: https://github.com/chiefmyron/phpunit-test-workbench/compare/v0.7.0...v0.7.1
 [0.7.0]: https://github.com/chiefmyron/phpunit-test-workbench/compare/v0.6.1...v0.7.0
 [0.6.1]: https://github.com/chiefmyron/phpunit-test-workbench/compare/v0.6.0...v0.6.1

@@ -91,6 +91,9 @@ To run test coverage, either:
 ![Execute tests via commands](docs/images/example-commands.gif)
 
 ## Release notes
+### v0.7.2 - 2024-05-02
+* __FIXED:__ Renaming a test class causes child methods to be "undetected" until full refresh of tests ([#96](https://github.com/chiefmyron/phpunit-test-workbench/issues/96))
+
 ### v0.7.1 - 2024-05-01
 * __FIXED:__ Debugging a test triggers code coverage ([#94](https://github.com/chiefmyron/phpunit-test-workbench/issues/94))
 
