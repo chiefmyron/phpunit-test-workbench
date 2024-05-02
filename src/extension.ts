@@ -145,7 +145,7 @@ export function activate(context: vscode.ExtensionContext) {
     // Register event handlers
     context.subscriptions.push(
         vscode.workspace.onDidChangeConfiguration(e => dispatcher.handleChangedConfiguration(e)),
-        vscode.workspace.onDidChangeTextDocument(e => dispatcher.handleChangedTextDocument(e)),
+        vscode.workspace.onDidSaveTextDocument(e => dispatcher.handleSavedTextDocument(e)),
         vscode.workspace.onDidRenameFiles(e => dispatcher.handleRenamedFile(e)),
         vscode.workspace.onDidDeleteFiles(e => dispatcher.handleDeletedFile(e))
     );
