@@ -206,6 +206,7 @@ export class TestRunner {
         // For a good explanation of why we can set event listners after spawning the 
         // child process, see https://stackoverflow.com/questions/59798310/when-does-node-spawned-child-process-actually-start
         this.logger.trace('Executing child process:' + commandString + ' ' + commandArguments.join(' '));
+        this.logger.info('Starting test run...\r\n');
         var child = spawn(commandString, commandArguments, {signal: abortController.signal});
 
         // Handle data written to stderr
