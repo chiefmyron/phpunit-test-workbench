@@ -65,6 +65,14 @@ export class TestRunSummary {
                 break;
         }
 
+        // If a test failure or error occurred, set the location of the message to the location in the test where the failure occurred
+        if (message) {
+            let testFileUri = result.getTestItem().uri;
+            let testFileLineNum = result.getMessageLineNum();
+            if (testFileUri && testFileLineNum) {
+                message.location = new vscode.Location(testFileUri, new vscode.Position((testFileLineNum - 1), 0));
+            }
+        }
         return message;
     }
 
