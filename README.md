@@ -91,7 +91,10 @@ To run test coverage, either:
 ![Execute tests via commands](docs/images/example-commands.gif)
 
 ## Release notes
-### v0.7.3 - 2024-05-02
+### v0.7.4 - 2024-05-07
+* __FIXED:__ Error peek not appearing on correct line when running Laravel v10.x tests ([#101](https://github.com/chiefmyron/phpunit-test-workbench/issues/101))
+
+### v0.7.3 - 2024-05-05
 * __CHANGED:__ Shift peek for test failures to appear on the line where the test failure occurred ([#98](https://github.com/chiefmyron/phpunit-test-workbench/issues/98))
 
 ### v0.7.2 - 2024-05-02

@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.7.4] - 2024-05-07
+### Fixed
+- Error peek not appearing on correct line when running Laravel v10.x tests ([#101](https://github.com/chiefmyron/phpunit-test-workbench/issues/101))
+
 ## [0.7.3] - 2024-05-05
 ### Changed
 - Shift peek for test failures to appear on the line where the test failure occurred ([#98](https://github.com/chiefmyron/phpunit-test-workbench/issues/98))
@@ -152,6 +156,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.1.0] - 2022-10-14
 - Initial release
 
+[0.7.4]: https://github.com/chiefmyron/phpunit-test-workbench/compare/v0.7.3...v0.7.4
 [0.7.3]: https://github.com/chiefmyron/phpunit-test-workbench/compare/v0.7.2...v0.7.3
 [0.7.2]: https://github.com/chiefmyron/phpunit-test-workbench/compare/v0.7.1...v0.7.2
 [0.7.1]: https://github.com/chiefmyron/phpunit-test-workbench/compare/v0.7.0...v0.7.1
