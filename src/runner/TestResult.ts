@@ -169,11 +169,19 @@ export class TestResult {
         messageDetail = this.parseEscapedTeamcityString(messageDetail);
 
         // Check for specific error location (line number)
-        let messageDetailLines = messageDetail.split("\r\n"); 
-        let messageLine = messageDetailLines.pop();
-        if (messageLine && messageLine.indexOf(':') > 0) {
-            let messageLineParts = messageLine.split(':');
-            this.messageLineNum = Number(messageLineParts.pop());
+        let messageDetailLines = messageDetail.split("\r\n");
+        while (messageDetailLines.length) {
+            let messageLine = messageDetailLines.pop();
+            if (messageLine && messageLine.indexOf(':') > 0) {
+                let messageLineParts = messageLine.split(':');
+                let lineNumStr = messageLineParts.pop();
+                let filePathStr = messageLineParts.join(':');  // Handle Windows paths, which include a : in the drive assignment
+                let messageLineUri = vscode.Uri.file(filePathStr);
+                if (messageLineUri.fsPath === this.testItem.uri?.fsPath) {
+                    this.messageLineNum = Number(lineNumStr);
+                    break;
+                }
+            }
         }
         this.messageDetail = messageDetail;
     }
@@ -213,7 +221,7 @@ export class TestResult {
         value = value.replace(/\|\[/g, '\[');      // Open square bracket
         value = value.replace(/\|\]/g, '\]');      // Close square bracket
         value = value.replace(/\|r\|n/g, '\r\n');  // Carriage return + line break
-        value = value.replace(/\|n/g, '\n');       // Line break only
+        value = value.replace(/\|n/g, '\r\n');     // Line break only
         return value.trim();
     }
 }
