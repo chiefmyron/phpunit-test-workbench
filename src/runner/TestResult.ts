@@ -21,11 +21,12 @@ export class TestResult {
     private status: TestResultStatus;
     private message: string | undefined;
     private messageDetail: string | undefined;
-    private messageLineNum: number | undefined;
+    private messagePosition: vscode.Position | undefined;
     private failureType: string | undefined;
     private expectedValue: string | undefined;
     private actualValue: string | undefined;
     private dataSetIdentifier: string | undefined;
+    private stackTrace: vscode.TestMessageStackFrame[];
     private duration: number;
 
     constructor(name: string, testItem: vscode.TestItem) {
@@ -35,6 +36,7 @@ export class TestResult {
         this.duration = 0;
         this.className = '';
         this.methodName = '';
+        this.stackTrace = [];
     }
 
     public markStarted(): void {
@@ -108,8 +110,8 @@ export class TestResult {
         return this.messageDetail;
     }
 
-    public getMessageLineNum(): number | undefined {
-        return this.messageLineNum;
+    public getMessagePosition(): vscode.Position | undefined {
+        return this.messagePosition;
     }
 
     public getFailureType(): string | undefined {
@@ -134,6 +136,14 @@ export class TestResult {
 
     public setDuration(duration: number): void {
         this.duration = duration;
+    }
+
+    public hasStackTrace(): boolean {
+        return (this.stackTrace.length > 0);
+    }
+
+    public getStackTrace(): vscode.TestMessageStackFrame[] {
+        return this.stackTrace;
     }
 
     public setTestFileDetails(methodName: string, className?: string) {
@@ -177,9 +187,21 @@ export class TestResult {
                 let lineNumStr = messageLineParts.pop();
                 let filePathStr = messageLineParts.join(':');  // Handle Windows paths, which include a : in the drive assignment
                 let messageLineUri = vscode.Uri.file(filePathStr);
+                let messageLinePosition = new vscode.Position(Number(lineNumStr) - 1, 0);
+
+                // Add as a stack trace frame
+                let frame = new vscode.TestMessageStackFrame(
+                    'label',
+                    messageLineUri,
+                    messageLinePosition
+                );
+                this.stackTrace.push(frame);
+
+                // If the error reported is from within the test item code, set the message line number
                 if (messageLineUri.fsPath === this.testItem.uri?.fsPath) {
-                    this.messageLineNum = Number(lineNumStr);
-                    break;
+                    if(this.testItem.range?.contains(messageLinePosition)) {
+                        this.messagePosition = messageLinePosition;
+                    }
                 }
             }
         }

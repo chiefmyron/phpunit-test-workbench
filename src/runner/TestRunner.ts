@@ -342,14 +342,14 @@ export class TestRunner {
                 }
 
                 // Only display diagnostics if the test failure contains line item range details
-                let messageLineNum = result.getMessageLineNum();
-                if (!messageLineNum) {
+                let messagePosition = result.getMessagePosition();
+                if (!messagePosition) {
                     continue;
                 }
 
                 // Add diagnostic to display error on correct line in editor
                 let testDocumentUri = testItem.uri!;
-                let testMessageLineItemIdx = messageLineNum - 1;
+                let testMessageLineItemIdx = messagePosition.line;
                 let diagnostics = this.testDiagnosticMap.get(testDocumentUri.toString());
                 if (!diagnostics) {
                     diagnostics = [];
