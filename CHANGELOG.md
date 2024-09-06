@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.8.0] - 2024-09-06
+### New
+- Add support for stack traces on test failure messages ([#105](https://github.com/chiefmyron/phpunit-test-workbench/issues/105))
+
 ## [0.7.4] - 2024-05-07
 ### Fixed
 - Error peek not appearing on correct line when running Laravel v10.x tests ([#101](https://github.com/chiefmyron/phpunit-test-workbench/issues/101))
@@ -156,6 +160,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.1.0] - 2022-10-14
 - Initial release
 
+[0.8.0]: https://github.com/chiefmyron/phpunit-test-workbench/compare/v0.7.4...v0.8.0
 [0.7.4]: https://github.com/chiefmyron/phpunit-test-workbench/compare/v0.7.3...v0.7.4
 [0.7.3]: https://github.com/chiefmyron/phpunit-test-workbench/compare/v0.7.2...v0.7.3
 [0.7.2]: https://github.com/chiefmyron/phpunit-test-workbench/compare/v0.7.1...v0.7.2
