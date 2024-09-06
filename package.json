@@ -8,7 +8,7 @@
   "publisher": "chiefmyron",
   "version": "0.7.4",
   "engines": {
-    "vscode": "^1.71.0"
+    "vscode": "^1.93.0"
   },
   "keywords": [
     "php",
@@ -283,6 +283,6 @@
     "stream-browserify": "^3.0.0",
     "timers-browserify": "^2.0.12",
     "util": "^0.12.4",
-    "xml2js": "^0.4.23"
+    "xml2js": "^0.6.2"
   }
 }
