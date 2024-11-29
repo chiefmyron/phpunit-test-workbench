@@ -3,6 +3,7 @@ import * as vscode from 'vscode';
 import { Logger } from '../output';
 import { Settings } from '../settings';
 import { ItemType, TestItemDefinition } from '../loader/tests/TestItemDefinition';
+import { exec } from 'child_process';
 
 export class TestExecutionRequest {
     private settings: Settings;
@@ -96,9 +97,17 @@ export class TestExecutionRequest {
         } else if (definition.getType() === ItemType.method) {
             let dataProviders = definition.getDataProviders();
             if (dataProviders.length > 0) {
-                request.setArgPhpUnit('--filter', new RegExp('::' + definition.getMethodName() + ' .*#.*$').source);
+                const phpUnitVersion = await request.getPhpUnitVersion();
+                
+                if (phpUnitVersion >= 10) {
+                    request.setArgPhpUnit('--filter', new RegExp('::' + definition.getMethodName() + '($| with data set #\\d+$)').source);
+                } else if (phpUnitVersion >= 7) {
+                    request.setArgPhpUnit('--filter', definition.getMethodName() + '.*');
+                } else {
+                    request.setArgPhpUnit('--filter', '/' + definition.getMethodName() + '($| with data set #\d+$)/');
+                }
             } else {
-                request.setArgPhpUnit('--filter', new RegExp('::' + definition.getMethodName() + '$').source);
+                request.setArgPhpUnit('--filter', definition.getMethodName() + '$');
             }
             
             request.setTargetClassOrFolder(item.uri!);
@@ -408,5 +417,21 @@ export class TestExecutionRequest {
 
         // Fall back to use workspace folder as the default location
         return workspaceFolder.uri;
+    }
+
+    private async getPhpUnitVersion(): Promise<number> {
+        try {
+            const phpUnit = await this.getPathBinaryPhpUnit();
+            const result = await new Promise<string>((resolve) => {
+                exec(`${phpUnit} --version`, (_, stdout: string) => {
+                    resolve(stdout);
+                });
+            });
+            
+            const versionMatch = result.match(/PHPUnit\s+(\d+)\./);
+            return versionMatch ? parseInt(versionMatch[1]) : 0;
+        } catch {
+            return 0;
+        }
     }
 }
