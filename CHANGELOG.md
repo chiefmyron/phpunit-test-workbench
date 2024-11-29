@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.8.1] - 2024-11-30
+### Fixed
+- Named data provider elements not detected when running single test method ([#107](https://github.com/chiefmyron/phpunit-test-workbench/issues/107))
+
 ## [0.8.0] - 2024-09-06
 ### New
 - Add support for stack traces on test failure messages ([#105](https://github.com/chiefmyron/phpunit-test-workbench/issues/105))
@@ -160,6 +164,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.1.0] - 2022-10-14
 - Initial release
 
+[0.8.1]: https://github.com/chiefmyron/phpunit-test-workbench/compare/v0.8.0...v0.8.1
 [0.8.0]: https://github.com/chiefmyron/phpunit-test-workbench/compare/v0.7.4...v0.8.0
 [0.7.4]: https://github.com/chiefmyron/phpunit-test-workbench/compare/v0.7.3...v0.7.4
 [0.7.3]: https://github.com/chiefmyron/phpunit-test-workbench/compare/v0.7.2...v0.7.3

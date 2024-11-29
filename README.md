@@ -18,7 +18,7 @@ An extension to integrate PHPUnit with the native Test Explorer functionality wi
 
 ## Requirements
 * __PHP:__ Version 7+
-* __PHPUnit:__ Version 9 & 10
+* __PHPUnit:__ Version 9, 10 & 11
 
 To run tests with debugging:
 * __XDebug:__ Version 3
@@ -91,6 +91,9 @@ To run test coverage, either:
 ![Execute tests via commands](docs/images/example-commands.gif)
 
 ## Release notes
+### v0.8.1 - 2024-11-30
+* __FIXED:__ Named data provider elements not detected when running single test method ([#107](https://github.com/chiefmyron/phpunit-test-workbench/issues/107))
+
 ### v0.8.0 - 2024-09-06
 * __NEW:__ Add support for stack traces on test failure messages ([#105](https://github.com/chiefmyron/phpunit-test-workbench/issues/105))
 
