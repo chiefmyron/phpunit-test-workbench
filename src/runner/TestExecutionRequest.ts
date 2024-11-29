@@ -96,7 +96,7 @@ export class TestExecutionRequest {
         } else if (definition.getType() === ItemType.method) {
             let dataProviders = definition.getDataProviders();
             if (dataProviders.length > 0) {
-                request.setArgPhpUnit('--filter', new RegExp('::' + definition.getMethodName() + ' .*#.*$').source);
+                request.setArgPhpUnit('--filter', new RegExp('::' + definition.getMethodName() + '($| with data set .*$)').source);
             } else {
                 request.setArgPhpUnit('--filter', new RegExp('::' + definition.getMethodName() + '$').source);
             }
