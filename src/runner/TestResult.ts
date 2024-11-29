@@ -179,7 +179,7 @@ export class TestResult {
         messageDetail = this.parseEscapedTeamcityString(messageDetail);
 
         // Check for specific error location (line number)
-        let messageDetailLines = messageDetail.split("\r\n");
+        let messageDetailLines = messageDetail.split("\r\n").map(path => path.trim());
         while (messageDetailLines.length) {
             let messageLine = messageDetailLines.pop();
             if (messageLine && messageLine.indexOf(':') > 0) {
