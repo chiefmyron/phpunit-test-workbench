@@ -91,6 +91,9 @@ To run test coverage, either:
 ![Execute tests via commands](docs/images/example-commands.gif)
 
 ## Release notes
+### v0.8.2 - 2024-11-30
+* __FIXED:__ Paths in stack frames contain extraneous spaces ([#109](https://github.com/chiefmyron/phpunit-test-workbench/issues/109))
+
 ### v0.8.1 - 2024-11-30
 * __FIXED:__ Named data provider elements not detected when running single test method ([#107](https://github.com/chiefmyron/phpunit-test-workbench/issues/107))
 
