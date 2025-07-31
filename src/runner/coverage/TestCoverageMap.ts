@@ -6,6 +6,7 @@ export class TestCoverageMap {
 
     private coverageMap: Map<vscode.FileCoverage, vscode.FileCoverageDetail[]>;
     private coverageFileUri?: vscode.Uri;
+    private testItemQueue?: Map<string, vscode.TestItem>;
     private logger: Logger;
 
     constructor(
@@ -16,8 +17,9 @@ export class TestCoverageMap {
         this.parseCoverageFile();
     }
 
-    public async loadCoverageFile(coverageFileUri: vscode.Uri) {
+    public async loadCoverageFile(coverageFileUri: vscode.Uri, testItemQueue: Map<string, vscode.TestItem>) {
         this.coverageFileUri = coverageFileUri;
+        this.testItemQueue = testItemQueue;
         this.coverageMap.clear();
         await this.parseCoverageFile();
     }
@@ -83,6 +85,13 @@ export class TestCoverageMap {
                 elements: +file.metrics['@_elements'] ?? 0,                       // Number of contained statements, conditionals and methods
                 elementsCovered: +file.metrics['@_coveredelements'] ?? 0,         // Number of contained statements, conditionals and methods with coverage
             };
+
+            // Check if there are any test items in the queue associated with this file
+            let fileTestItems: vscode.TestItem[] = [];
+            if (this.testItemQueue) {
+                let keys = this.testItemQueue.keys();
+                let blah = 'sdf';
+            }
                 
             let fileUri = vscode.Uri.file(filename);
             let coverage = new vscode.FileCoverage(

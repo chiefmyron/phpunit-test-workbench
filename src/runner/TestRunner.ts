@@ -115,7 +115,7 @@ export class TestRunner {
 
                 // If this is a code coverage run, process the results file now
                 if (coverage) {
-                    await this.coverageMap.loadCoverageFile(executionRequest.getCoverageOutputFileUri()!);
+                    await this.coverageMap.loadCoverageFile(executionRequest.getCoverageOutputFileUri()!, this.testItemQueue);
                     for (let fileCoverage of this.coverageMap.getFileCoverage()) {
                         run.addCoverage(fileCoverage);
                     }
