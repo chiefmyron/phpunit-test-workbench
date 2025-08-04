@@ -91,6 +91,9 @@ To run test coverage, either:
 ![Execute tests via commands](docs/images/example-commands.gif)
 
 ## Release notes
+### v0.8.3 - 2025-08-05
+* __FIXED:__ Fix code coverage clover report read with php-code-coverage 11.0.4 and more ([#113](https://github.com/chiefmyron/phpunit-test-workbench/issues/113))
+
 ### v0.8.2 - 2024-11-30
 * __FIXED:__ Paths in stack frames contain extraneous spaces ([#109](https://github.com/chiefmyron/phpunit-test-workbench/issues/109))
 

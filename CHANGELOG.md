@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.8.3] - 2024-08-05
+### Fixed
+- Fix code coverage clover report read with php-code-coverage 11.0.4 and more ([#113](https://github.com/chiefmyron/phpunit-test-workbench/issues/113))
+
 ## [0.8.2] - 2024-11-30
 ### Fixed
 - Paths in stack frames contain extraneous spaces ([#109](https://github.com/chiefmyron/phpunit-test-workbench/issues/109))
@@ -168,6 +172,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.1.0] - 2022-10-14
 - Initial release
 
+[0.8.3]: https://github.com/chiefmyron/phpunit-test-workbench/compare/v0.8.2...v0.8.3
 [0.8.2]: https://github.com/chiefmyron/phpunit-test-workbench/compare/v0.8.1...v0.8.2
 [0.8.1]: https://github.com/chiefmyron/phpunit-test-workbench/compare/v0.8.0...v0.8.1
 [0.8.0]: https://github.com/chiefmyron/phpunit-test-workbench/compare/v0.7.4...v0.8.0
