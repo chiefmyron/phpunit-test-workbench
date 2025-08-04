@@ -105,7 +105,17 @@ export class TestRunner {
         // Dispatch each of the test execution requests in sequence
         for (let executionRequest of executionRequests) {
             if (cancel.isCancellationRequested !== true) {
-                let summary: TestRunSummary = await this.dispatchExecutionRequest(run, executionRequest, cancel, debug);
+                var summary: TestRunSummary;
+                try {
+                    summary = await this.dispatchExecutionRequest(run, executionRequest, cancel, debug);
+                } catch (error) {
+                    this.logger.error(`An error occurred while executing the test run!`);
+                    let message = this.parseErrorValue(error);
+                    this.logger.trace(message);
+                    this.logger.setTestRun(undefined);
+                    run.end();
+                    return;
+                }
 
                 // Print execution summary to logs
                 this.logTestRunSummary(summary);
@@ -115,15 +125,26 @@ export class TestRunner {
 
                 // If this is a code coverage run, process the results file now
                 if (coverage) {
-                    await this.coverageMap.loadCoverageFile(executionRequest.getCoverageOutputFileUri()!);
-                    for (let fileCoverage of this.coverageMap.getFileCoverage()) {
-                        run.addCoverage(fileCoverage);
+                    this.logger.info('Processing code coverage statistics...');
+                    try {
+                        await this.coverageMap.loadCoverageFile(executionRequest.getCoverageOutputFileUri()!);
+                        for (let fileCoverage of this.coverageMap.getFileCoverage()) {
+                            run.addCoverage(fileCoverage);
+                        }
+                    } catch (error) {
+                        this.logger.error(`An error occurred while processing code coverage statistics!`);
+                        let message = this.parseErrorValue(error);
+                        this.logger.trace(message);
+                        this.logger.setTestRun(undefined);
+                        run.end();
+                        return;
                     }
                 }
             }
         }
 
         // Close out the test run
+        this.logger.info('\r\nTest run complete.');
         this.logger.setTestRun(undefined);
         run.end();
 
@@ -447,5 +468,12 @@ export class TestRunner {
                 return;
             }
         }
+    }
+
+    private parseErrorValue(error: any) {
+        if (error instanceof Error) {
+            return error.message;
+        } 
+        return String(error);
     }
 }

@@ -13,7 +13,7 @@ export class TestCoverageMap {
     ) {
         this.coverageMap = new Map<vscode.FileCoverage, vscode.FileCoverageDetail[]>();
         this.logger = logger;
-        this.parseCoverageFile();
+        // this.parseCoverageFile();
     }
 
     public async loadCoverageFile(coverageFileUri: vscode.Uri) {
@@ -36,6 +36,7 @@ export class TestCoverageMap {
 
     private async parseCoverageFile() {
         // Open the coverage file and extract contents
+        this.logger.trace(`Parsing coverage file: ${this.coverageFileUri!}`);
         try {
             let coverageXmlArr = await vscode.workspace.fs.readFile(this.coverageFileUri!);
             var coverageXml = coverageXmlArr.toString();
@@ -51,23 +52,55 @@ export class TestCoverageMap {
             return;
         }
 
-        // Start parsing
+        // Start coverage file XML
         let parser = new xml.XMLParser({ ignoreAttributes: false, attributeNamePrefix: '@_' });
         let data = parser.parse(coverageXml);
-        if (!data?.coverage?.project?.file) {
-            // There was no coverage data for individual files
-            this.logger.warn(`Coverage analysis does not contain any detail for individual files`);
-            return;
+        let filesProcessed = false;
+
+        // Process any files not associated with a package
+        if (data?.coverage?.project?.file) {
+            this.processCoverageDetails(data.coverage.project.file);
+            filesProcessed = true;
         }
 
-        // Get details of files
-        for (let file of data.coverage.project.file) {
+        // Process files for packages
+        if (data?.coverage?.project?.package) {
+            for (let packageDetails of data.coverage.project.package) {
+                if (!packageDetails.file) {
+                    // No files for package - continue to the next
+                    continue;
+                }
+
+                // Check for single or multiple files
+                let files = [];
+                if (this.isIterable(packageDetails.file) === true) {
+                    files = packageDetails.file;
+                } else {
+                    files.push(packageDetails.file);
+                }
+
+                // Process for list of files
+                this.processCoverageDetails(files);
+                filesProcessed = true;
+            }
+        }
+
+        if (!filesProcessed) {
+            // There was no coverage data for individual files
+            this.logger.warn(`Coverage analysis does not contain any detail for individual files`);
+        }
+        this.logger.trace(`Completed parsing coverage file: ${this.coverageFileUri!}`);
+    }
+
+    private processCoverageDetails(files: any[]) {
+        for (let file of files) {
             // Get filename
             let filename = file['@_name'] ?? '';
             if (!filename) {
                 // If there is no filename, there will be no relevant statistics to capture - move to next file in report
                 continue;
             }
+            this.logger.trace(`Processing coverage statistics for: ${filename}`);
 
             // Get file metrics
             let fileMetrics = {
@@ -132,5 +165,13 @@ export class TestCoverageMap {
             );                  
         }
         return;
+    }
+
+    private isIterable(input: any) {  
+        if (input === null || input === undefined) {
+            return false;
+        }
+
+        return typeof input[Symbol.iterator] === 'function';
     }
 }
