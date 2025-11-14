@@ -91,6 +91,9 @@ To run test coverage, either:
 ![Execute tests via commands](docs/images/example-commands.gif)
 
 ## Release notes
+### v0.8.4 - 2025-11-14
+* __FIXED:__ Exception when running test for single method without namespaces ([#115](https://github.com/chiefmyron/phpunit-test-workbench/issues/115))
+
 ### v0.8.3 - 2025-08-05
 * __FIXED:__ Fix code coverage clover report read with php-code-coverage 11.0.4 and more ([#113](https://github.com/chiefmyron/phpunit-test-workbench/issues/113))
 

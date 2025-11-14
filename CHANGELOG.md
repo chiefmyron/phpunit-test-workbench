@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.8.4] - 2024-11-14
+### Fixed
+- Exception when running test for single method without namespaces ([#115](https://github.com/chiefmyron/phpunit-test-workbench/issues/115))
+
 ## [0.8.3] - 2024-08-05
 ### Fixed
 - Fix code coverage clover report read with php-code-coverage 11.0.4 and more ([#113](https://github.com/chiefmyron/phpunit-test-workbench/issues/113))
@@ -172,6 +176,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.1.0] - 2022-10-14
 - Initial release
 
+[0.8.4]: https://github.com/chiefmyron/phpunit-test-workbench/compare/v0.8.3...v0.8.4
 [0.8.3]: https://github.com/chiefmyron/phpunit-test-workbench/compare/v0.8.2...v0.8.3
 [0.8.2]: https://github.com/chiefmyron/phpunit-test-workbench/compare/v0.8.1...v0.8.2
 [0.8.1]: https://github.com/chiefmyron/phpunit-test-workbench/compare/v0.8.0...v0.8.1
